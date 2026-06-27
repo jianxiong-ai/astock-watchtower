@@ -451,6 +451,102 @@ button:disabled {
   margin-top: 8px;
 }
 
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.section-header h2,
+.section-header p {
+  margin-top: 0;
+}
+
+.push-log-grid,
+.push-log-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.push-log-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.push-log-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: rgba(245, 245, 247, 0.72);
+}
+
+.push-log-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.push-log-head strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.push-log-head span {
+  display: inline-flex;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.push-log-head time {
+  white-space: nowrap;
+}
+
+.push-brief {
+  display: grid;
+  gap: 10px;
+}
+
+.brief-conclusion {
+  margin: 0;
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.section-label {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.brief-list {
+  margin: 0;
+  padding-left: 22px;
+  line-height: 1.75;
+}
+
+.discipline-line {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0, 113, 227, 0.08);
+  color: #055eb8;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
 .big {
   font-size: 32px;
   font-weight: 800;

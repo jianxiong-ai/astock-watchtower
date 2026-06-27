@@ -8,6 +8,7 @@ from app.db import get_db
 from app.models import PushLog
 from app.schemas import PushLogOut, SchedulerRunRequest, SchedulerRunResponse, SchedulerStatus
 from app.services.scheduler import get_scheduler_status
+from app.services.push_log_summary import summarize_push_message
 from app.services.subscription_runner import run_subscription_scan
 
 router = APIRouter(prefix="/api/scheduler", tags=["scheduler"])
@@ -24,10 +25,24 @@ async def run_now(payload: SchedulerRunRequest) -> SchedulerRunResponse:
 
 
 @router.get("/logs", response_model=List[PushLogOut])
-def logs(limit: int = 30, symbol: str = "", db: Session = Depends(get_db)) -> List[PushLog]:
+def logs(limit: int = 30, symbol: str = "", db: Session = Depends(get_db)) -> List[PushLogOut]:
     safe_limit = min(max(limit, 1), 100)
     stmt = select(PushLog)
     if symbol:
         stmt = stmt.where(PushLog.symbol == symbol)
     stmt = stmt.order_by(PushLog.created_at.desc(), PushLog.id.desc()).limit(safe_limit)
-    return list(db.scalars(stmt))
+    rows = list(db.scalars(stmt))
+    return [
+        PushLogOut(
+            id=row.id,
+            subscription_id=row.subscription_id,
+            symbol=row.symbol,
+            status=row.status,
+            trigger_summary=row.trigger_summary,
+            message=row.message,
+            message_brief=summarize_push_message(row.message),
+            error=row.error,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]

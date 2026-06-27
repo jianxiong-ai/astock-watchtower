@@ -84,10 +84,33 @@ type ManualAnalysisPushResponse = {
   message_preview: string;
 };
 
+type PushMessageBrief = {
+  title?: string;
+  conclusion?: string;
+  market_line?: string;
+  top_three?: string[];
+  action_line?: string;
+  data_boundary?: string;
+  has_morning_brief?: boolean;
+};
+
+type PushLog = {
+  id: number;
+  subscription_id: number | null;
+  symbol: string;
+  status: string;
+  trigger_summary: string;
+  message: string;
+  message_brief: PushMessageBrief;
+  error: string;
+  created_at: string;
+};
+
 export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [items, setItems] = useState<Subscription[]>([]);
   const [positions, setPositions] = useState<Record<string, Position>>({});
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [pushLogs, setPushLogs] = useState<PushLog[]>([]);
   const [importResult, setImportResult] = useState<TradeImportResult | null>(null);
   const [symbol, setSymbol] = useState('');
   const [name, setName] = useState('');
@@ -122,8 +145,13 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
     setTrades(tradeData);
   }
 
+  async function loadPushLogs() {
+    const data = await apiGet<PushLog[]>('/api/scheduler/logs?limit=12');
+    setPushLogs(data);
+  }
+
   useEffect(() => {
-    load().catch((error) => setMessage(error.message));
+    Promise.all([load(), loadPushLogs()]).catch((error) => setMessage(error.message));
   }, []);
 
   function activeSubscriptionCount() {
@@ -323,6 +351,7 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
     setMessage('');
     try {
       const result = await apiPost<ManualAnalysisPushResponse>(`/api/subscriptions/${id}/send-analysis-push`, {});
+      await loadPushLogs();
       setMessage(`分析推送已发送：${result.symbol}。本次不会改变正式定时任务或触发规则。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -452,6 +481,59 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
     }
   }
 
+  function formatLogTime(value: string) {
+    try {
+      return new Date(value).toLocaleString('zh-CN', { hour12: false });
+    } catch {
+      return value;
+    }
+  }
+
+  function latestLogsForSymbol(symbolValue: string) {
+    return pushLogs.filter((log) => log.symbol === symbolValue).slice(0, 3);
+  }
+
+  function renderPushLogBrief(log: PushLog) {
+    const brief = log.message_brief || {};
+    const topThree = brief.top_three || [];
+    return (
+      <article className="push-log-card" key={log.id}>
+        <div className="push-log-head">
+          <div>
+            <strong>{log.symbol || '未知股票'}</strong>
+            <span>{log.status}</span>
+          </div>
+          <time>{formatLogTime(log.created_at)}</time>
+        </div>
+        {brief.has_morning_brief ? (
+          <div className="push-brief">
+            {brief.conclusion && <p className="brief-conclusion">{brief.conclusion.replace(/^结论：/, '')}</p>}
+            {brief.market_line && <p className="muted">{brief.market_line}</p>}
+            {topThree.length > 0 && (
+              <>
+                <p className="section-label">今日只看 3 件事</p>
+                <ol className="brief-list">
+                  {topThree.map((item) => <li key={item}>{item}</li>)}
+                </ol>
+              </>
+            )}
+            {brief.action_line && <p className="discipline-line">{brief.action_line}</p>}
+            {brief.data_boundary && <p className="muted">{brief.data_boundary}</p>}
+          </div>
+        ) : (
+          <p className="muted">{log.trigger_summary || log.error || '旧日志暂无结构化晨会摘要。'}</p>
+        )}
+        {log.message && (
+          <details className="run-result nested">
+            <summary>查看完整推送文本</summary>
+            <pre>{log.message}</pre>
+          </details>
+        )}
+        {log.error && <p className="warning">{log.error}</p>}
+      </article>
+    );
+  }
+
   return (
     <main className={embedded ? 'workspace-panel' : 'container'}>
       {!embedded && <Link href="/">← 返回首页</Link>}
@@ -500,6 +582,22 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
         <button disabled={loading}>{loading ? '保存中...' : '新增订阅'}</button>
         {activeSubscriptionCount() >= 3 && <p className="warning">已达到 3 个启用订阅上限；新增前请先暂停或删除一个订阅。</p>}
       </form>
+      )}
+
+      {activeTab === 'config' && (
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>最近分析推送</h2>
+            <p className="muted">网页端复用飞书推送的晨会摘要结构；完整原文默认折叠。</p>
+          </div>
+          <button type="button" onClick={() => loadPushLogs().catch((error) => setMessage(error.message))} disabled={loading}>刷新历史</button>
+        </div>
+        <div className="push-log-grid">
+          {pushLogs.slice(0, 6).map(renderPushLogBrief)}
+          {pushLogs.length === 0 && <p className="muted">暂无推送历史。点击订阅卡片里的“发送分析推送”后会在这里展示预览。</p>}
+        </div>
+      </section>
       )}
 
       {activeTab === 'trades' && (
@@ -768,6 +866,14 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
                 <button onClick={() => sendAnalysisPush(item.id)} disabled={loading}>{loading ? '生成中...' : '发送分析推送'}</button>
                 <button className="danger" onClick={() => remove(item.id)}>删除</button>
               </div>
+              {latestLogsForSymbol(item.symbol).length > 0 && (
+                <details className="run-result" open>
+                  <summary>该股票最近推送</summary>
+                  <div className="push-log-stack">
+                    {latestLogsForSymbol(item.symbol).map(renderPushLogBrief)}
+                  </div>
+                </details>
+              )}
               </>
               )}
 

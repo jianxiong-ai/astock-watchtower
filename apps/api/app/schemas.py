@@ -128,6 +128,7 @@ class PushLogOut(BaseModel):
     status: str
     trigger_summary: str = ""
     message: str = ""
+    message_brief: Dict[str, Any] = Field(default_factory=dict)
     error: str = ""
     created_at: datetime
 
