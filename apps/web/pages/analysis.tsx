@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import React, { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { ReportSections, type ReportSection } from '../components/ReportSections';
 import { apiPost } from '../lib/api';
@@ -52,7 +52,7 @@ type AnalyzeResponse = {
     current_status: string;
     official_fact_evidence?: string[];
     mapped_summary?: string[];
-    mapped_coverage?: { available: number; partial: number; missing: number; total: number };
+    mapped_coverage?: Record<string, unknown>;
     mapped_metrics?: Array<{
       metric: string;
       status: string;
@@ -92,8 +92,63 @@ type AnalyzeResponse = {
 
 function fmtLargeMoney(value?: number | null) {
   if (value === null || value === undefined) return '不可靠可得';
-  if (Math.abs(value) >= 100000000) return `¥${(value / 100000000).toFixed(2)}亿`;
-  return `¥${value.toLocaleString()}`;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '不可靠可得';
+  if (Math.abs(numeric) >= 100000000) return `¥${(numeric / 100000000).toFixed(2)}亿`;
+  return `¥${numeric.toLocaleString()}`;
+}
+
+function fmtNumber(value?: number | string | null, digits = 1) {
+  if (value === null || value === undefined || value === '') return '';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '';
+  return numeric.toFixed(digits);
+}
+
+function safeArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function fmtCoverage(value?: Record<string, unknown>) {
+  if (!value) return '';
+  const directAvailable = Number(value.available);
+  const directMissing = Number(value.missing);
+  const directTotal = Number(value.total);
+  if (Number.isFinite(directAvailable) || Number.isFinite(directMissing) || Number.isFinite(directTotal)) {
+    return `Available ${Number.isFinite(directAvailable) ? directAvailable : '—'} / Missing ${Number.isFinite(directMissing) ? directMissing : '—'} / Total ${Number.isFinite(directTotal) ? directTotal : '—'}`;
+  }
+  const total = value.total as Record<string, unknown> | undefined;
+  const filing = value.filing as Record<string, unknown> | undefined;
+  const provider = value.provider as Record<string, unknown> | undefined;
+  const parts = [];
+  if (total) parts.push(`合计 Available ${total.available ?? '—'} / Missing ${total.missing ?? '—'} / Total ${total.total ?? '—'}`);
+  if (filing) parts.push(`公告/财报 ${filing.available ?? '—'} 可用`);
+  if (provider) parts.push(`Provider ${provider.available ?? '—'} 可用`);
+  return parts.join('；') || JSON.stringify(value);
+}
+
+class AnalysisRenderBoundary extends React.Component<{ children: React.ReactNode }, { error: string }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: '' };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error: error.message || '未知渲染错误' };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="card wide">
+          <h2>报告渲染异常</h2>
+          <p className="notice">分析数据已返回，但页面渲染某个字段时出错：{this.state.error}</p>
+          <p className="muted">请保留当前股票和时间点，后续可以继续定位字段口径；页面不会再整体崩溃。</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) {
@@ -139,6 +194,7 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
       {message && <p className="notice">{message}</p>}
 
       {result && (
+        <AnalysisRenderBoundary>
         <section className="grid two">
           <div className="card wide">
             <h2>完整报告</h2>
@@ -188,9 +244,9 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
                 <div>
                   <p>信号</p>
                   <ul>
-                    {(result.universal_indicators.technicals.signals || []).map((item) => <li key={item}>{item}</li>)}
+                    {safeArray(result.universal_indicators.technicals.signals).map((item) => <li key={item}>{item}</li>)}
                   </ul>
-                  {!(result.universal_indicators.technicals.signals || []).length && <p className="muted">暂无技术触发。</p>}
+                  {!safeArray(result.universal_indicators.technicals.signals).length && <p className="muted">暂无技术触发。</p>}
                 </div>
               </div>
             ) : (
@@ -214,7 +270,7 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
               {result.position && (
                 <p>
                   持仓：{result.position.shares} 股 · 成本 ¥{result.position.average_cost}
-                  {result.action_advice.position_pct !== null && result.action_advice.position_pct !== undefined ? ` · 估算仓位 ${result.action_advice.position_pct.toFixed(1)}%` : ''}
+                  {fmtNumber(result.action_advice.position_pct) ? ` · 估算仓位 ${fmtNumber(result.action_advice.position_pct)}%` : ''}
                 </p>
               )}
               <div className="advice-box">
@@ -232,7 +288,7 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
           <div className="card">
             <h2>行业特有指标</h2>
             <ul>
-              {result.sector_indicators.core_metrics.map((metric) => <li key={metric}>{metric}</li>)}
+              {safeArray(result.sector_indicators.core_metrics).map((metric) => <li key={metric}>{metric}</li>)}
             </ul>
             <p className="muted">{result.sector_indicators.current_status}</p>
           </div>
@@ -241,7 +297,7 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
             <h2>行业映射指标</h2>
             {result.sector_indicators.mapped_coverage && (
               <p className="muted">
-                覆盖：Available {result.sector_indicators.mapped_coverage.available} / Missing {result.sector_indicators.mapped_coverage.missing} / Total {result.sector_indicators.mapped_coverage.total}
+                覆盖：{fmtCoverage(result.sector_indicators.mapped_coverage)}
               </p>
             )}
             <div className="table-wrap">
@@ -256,7 +312,7 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
                   </tr>
                 </thead>
                 <tbody>
-                  {(result.sector_indicators.mapped_metrics || []).map((row) => (
+                  {safeArray(result.sector_indicators.mapped_metrics).map((row) => (
                     <tr key={row.metric}>
                       <td>{row.metric}</td>
                       <td>{row.status}</td>
@@ -277,15 +333,15 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
               {result.universal_indicators.financials?.latest_fact_date ? ` · 最新证据 ${result.universal_indicators.financials.latest_fact_date}` : ''}
             </p>
             <ul>
-              {(result.universal_indicators.financials?.evidence_lines || []).slice(0, 8).map((line) => <li key={line}>{line}</li>)}
+              {safeArray(result.universal_indicators.financials?.evidence_lines).slice(0, 8).map((line) => <li key={line}>{line}</li>)}
             </ul>
-            {!(result.universal_indicators.financials?.evidence_lines || []).length && <p className="muted">暂无可展示的财报/分红/业绩预告字段。</p>}
+            {!safeArray(result.universal_indicators.financials?.evidence_lines).length && <p className="muted">暂无可展示的财报/分红/业绩预告字段。</p>}
           </div>
 
           <div className="card">
             <h2>官方公告</h2>
             <ul>
-              {(result.events || []).slice(0, 6).map((item) => (
+              {safeArray(result.events).slice(0, 6).map((item) => (
                 <li key={`${item.published_at}-${item.title}`}>
                   <a href={item.url} target="_blank" rel="noreferrer">{item.importance}｜{item.type}｜{item.title}</a>
                   <span className="muted"> · {item.published_at} · PDF {item.pdf_extract_status || 'not_attempted'}{item.pdf_table_count ? ` · 表格${item.pdf_table_count}个` : ''}</span>
@@ -297,10 +353,11 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
           <div className="card">
             <h2>Missing Inputs</h2>
             <ul>
-              {result.missing_inputs.map((item) => <li key={item.metric}>{item.metric}：{item.impact}</li>)}
+              {safeArray(result.missing_inputs).map((item) => <li key={item.metric}>{item.metric}：{item.impact}</li>)}
             </ul>
           </div>
         </section>
+        </AnalysisRenderBoundary>
       )}
     </main>
   );

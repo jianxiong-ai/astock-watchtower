@@ -40,15 +40,15 @@ a {
 
 .app-shell {
   max-width: 1180px;
-  height: 100vh;
+  min-height: 100vh;
   margin: 0 auto;
   padding: 18px 18px 32px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
 .terminal-bar {
+  position: sticky;
+  top: 10px;
+  z-index: 20;
   display: grid;
   grid-template-columns: 260px minmax(480px, 1fr) auto;
   align-items: center;
@@ -58,10 +58,8 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 22px;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
 }
 
 .terminal-brand {
@@ -138,9 +136,6 @@ a {
 }
 
 .workspace-card {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.82);
@@ -792,7 +787,6 @@ td select {
     padding: 32px;
   }
   .app-shell {
-    height: 100vh;
     padding: 12px;
   }
   .terminal-bar {
