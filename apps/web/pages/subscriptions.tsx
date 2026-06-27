@@ -352,7 +352,7 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
     try {
       const result = await apiPost<ManualAnalysisPushResponse>(`/api/subscriptions/${id}/send-analysis-push`, {});
       await loadPushLogs();
-      setMessage(`分析推送已发送：${result.symbol}。本次不会改变正式定时任务或触发规则。`);
+      setMessage(`测试推送已发送：${result.symbol}。本次不会改变正式定时任务或触发规则。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -555,7 +555,7 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
         <button type="button" className={activeTab === 'trades' ? 'active' : ''} onClick={() => setActiveTab('trades')}>持仓交易</button>
       </nav>
       <p className="tab-note">
-        {activeTab === 'config' && '当前页处理订阅和飞书配置；可手动发送一份当前分析报告，不改变正式定时任务。'}
+        {activeTab === 'config' && '当前页处理订阅和飞书配置；可手动发送一份测试推送，不改变正式定时任务。'}
         {activeTab === 'trades' && '当前页维护交易流水和持仓基线；删除交易前会二次确认，修改后会重新计算持仓。'}
       </p>
 
@@ -582,22 +582,6 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
         <button disabled={loading}>{loading ? '保存中...' : '新增订阅'}</button>
         {activeSubscriptionCount() >= 3 && <p className="warning">已达到 3 个启用订阅上限；新增前请先暂停或删除一个订阅。</p>}
       </form>
-      )}
-
-      {activeTab === 'config' && (
-      <section className="card">
-        <div className="section-header">
-          <div>
-            <h2>最近分析推送</h2>
-            <p className="muted">网页端复用飞书推送的晨会摘要结构；完整原文默认折叠。</p>
-          </div>
-          <button type="button" onClick={() => loadPushLogs().catch((error) => setMessage(error.message))} disabled={loading}>刷新历史</button>
-        </div>
-        <div className="push-log-grid">
-          {pushLogs.slice(0, 6).map(renderPushLogBrief)}
-          {pushLogs.length === 0 && <p className="muted">暂无推送历史。点击订阅卡片里的“发送分析推送”后会在这里展示预览。</p>}
-        </div>
-      </section>
       )}
 
       {activeTab === 'trades' && (
@@ -863,11 +847,11 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
                 )}
               </details>
               <div className="actions">
-                <button onClick={() => sendAnalysisPush(item.id)} disabled={loading}>{loading ? '生成中...' : '发送分析推送'}</button>
+                <button onClick={() => sendAnalysisPush(item.id)} disabled={loading}>{loading ? '生成中...' : '测试推送'}</button>
                 <button className="danger" onClick={() => remove(item.id)}>删除</button>
               </div>
               {latestLogsForSymbol(item.symbol).length > 0 && (
-                <details className="run-result" open>
+                <details className="run-result symbol-push-history">
                   <summary>该股票最近推送</summary>
                   <div className="push-log-stack">
                     {latestLogsForSymbol(item.symbol).map(renderPushLogBrief)}

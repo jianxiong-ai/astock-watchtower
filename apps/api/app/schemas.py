@@ -225,4 +225,6 @@ class AnalyzeResponse(BaseModel):
     missing_inputs: List[Dict[str, Any]]
     research_posture: Dict[str, Any]
     report_sections: List[Dict[str, Any]] = Field(default_factory=list)
+    action_advice: Dict[str, Any] = Field(default_factory=dict)
+    position: Optional[PositionOut] = None
     sources: List[Dict[str, str]]

@@ -210,7 +210,7 @@ curl -X POST http://localhost:8000/api/scheduler/run-now \
 真实飞书测试：
 
 - 在订阅页填入飞书 webhook。
-- 点击“发送分析推送”。
+- 点击“测试推送”。
 - 只对自己的测试群发送。
 
 真实飞书试运行：
