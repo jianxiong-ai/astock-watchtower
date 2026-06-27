@@ -10,6 +10,7 @@ from app.models import Announcement, ExtractedFact
 from app.schemas import AnalyzeResponse
 from app.services.announcements import fetch_official_announcements, sync_official_announcements
 from app.services.data_quality import missing_input, stale_source, source_warning
+from app.services.industry_providers import build_industry_provider_context, merge_provider_rows
 from app.services.indicators import compute_technical_indicators, infer_industry, sector_indicator_template
 from app.services.market_data import DailyBar, fetch_market_weather, fetch_secondary_daily_bars, fetch_secondary_quote_valuation, fetch_sina_quotes
 from app.services.report_builder import build_report_sections
@@ -410,6 +411,11 @@ async def analyze_ashare(
     fact_summary = _summarize_extracted_facts(db, normalized.symbol)
     fact_lines = _fact_lines(fact_summary)
     sector_mapping = build_sector_indicator_mapping(industry, fact_summary)
+    industry_provider_context = await build_industry_provider_context(industry, normalized.symbol, market_weather)
+    mapped_metrics = merge_provider_rows(
+        list(sector_mapping.get("rows") or []),
+        list(industry_provider_context.get("rows") or []),
+    )
     if not include_intraday and completed_bars:
         latest_bar = completed_bars[-1]
         previous_bar = completed_bars[-2] if len(completed_bars) >= 2 else None
@@ -451,13 +457,17 @@ async def analyze_ashare(
         stale_source(
             "行业特有非公告数据",
             "",
-            "行业价格、资金流、北向/两融等外部数据仍未接入。",
+            "部分行业价格、资金流、北向/两融等外部数据仍未接入。",
             company=normalized.symbol,
-            attempted_source="MVP 内置 provider",
+            attempted_source="industry provider v1",
             preferred_source="后续 AkShare/Tushare/用户自定义 provider",
             next_source="配置行业价格、资金流或用户自带数据源",
         )
     ]
+    provider_warnings = list(industry_provider_context.get("warnings") or [])
+    if industry_provider_context.get("status") in {"Available", "Partial"} or industry_provider_context.get("rows"):
+        stale_sources = []
+    stale_sources.extend(provider_warnings)
     if valuation.get("status") != "Available":
         stale_sources.append(
             stale_source(
@@ -515,12 +525,27 @@ async def analyze_ashare(
     sector_indicators = {
         "industry": industry,
         "core_metrics": sector_template["core_metrics"],
-        "mapped_metrics": sector_mapping["rows"],
-        "mapped_summary": sector_mapping["summary_lines"],
-        "mapped_coverage": sector_mapping["coverage"],
+        "mapped_metrics": mapped_metrics,
+        "mapped_summary": [
+            *list(sector_mapping.get("summary_lines") or []),
+            *list(industry_provider_context.get("summary_lines") or []),
+        ][:8],
+        "mapped_coverage": {
+            "filing": sector_mapping["coverage"],
+            "provider": industry_provider_context.get("coverage") or {},
+            "total": {
+                "available": len([row for row in mapped_metrics if row.get("status") == "Available"]),
+                "partial": len([row for row in mapped_metrics if row.get("status") == "Partial"]),
+                "missing": len([row for row in mapped_metrics if row.get("status") == "Missing"]),
+                "total": len(mapped_metrics),
+            },
+        },
+        "industry_provider": industry_provider_context,
         "current_status": (
-            "已接入官方公告结构化事实；行业专属 KPI 仍需继续扩展。"
-            if has_financial_facts
+            "已接入官方公告结构化事实和行业 provider v1；行业专属 KPI 仍需继续扩展。"
+            if has_financial_facts and industry_provider_context.get("rows")
+            else "已接入行业 provider v1；尚未抽到可用官方财报/分红/业绩预告事实。"
+            if industry_provider_context.get("rows")
             else "行业模板已配置；尚未抽到可用官方财报/分红/业绩预告事实。"
         ),
         "official_fact_evidence": fact_lines,
@@ -535,7 +560,7 @@ async def analyze_ashare(
             next_source="官方定期报告、公告或后续配置的行业 provider",
         )
         for metric in sector_template["missing_inputs"]
-    ] + list(sector_mapping.get("missing_inputs") or []) + announcement_missing_inputs
+    ] + list(sector_mapping.get("missing_inputs") or []) + list(industry_provider_context.get("missing_inputs") or []) + announcement_missing_inputs
     research_posture = {
         "position_basis": "无持仓基线/仅研究监控建议",
         "posture": posture,

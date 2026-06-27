@@ -468,6 +468,7 @@ async def fetch_eastmoney_sector_weather() -> Dict[str, object]:
         "up": up,
         "down": down,
         "rising_ratio": _round_optional(up / total * 100 if total else None),
+        "sectors": sectors,
         "top_gainers": sorted_by_change[:8],
         "top_losers": list(reversed(sorted_by_change[-8:])),
         "top_inflows": sorted_by_flow[:8],
