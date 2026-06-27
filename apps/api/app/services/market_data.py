@@ -102,6 +102,35 @@ def _parse_sina_hk_index(code: str, payload: str) -> Optional[Dict[str, object]]
     }
 
 
+def _parse_sina_hk_stock(code: str, payload: str) -> Optional[Dict[str, object]]:
+    raw = _extract_sina_raw(code, payload)
+    if not raw:
+        return None
+    fields = raw.split(",")
+    if len(fields) < 19:
+        return None
+    current = _safe_float(fields[6])
+    previous_close = _safe_float(fields[3])
+    change_pct = _safe_float(fields[8])
+    return {
+        "symbol": code.replace("rt_hk", ""),
+        "name": fields[1] or code,
+        "current": current,
+        "previous_close": previous_close,
+        "open": _safe_float(fields[2]),
+        "high": _safe_float(fields[4]),
+        "low": _safe_float(fields[5]),
+        "change": _safe_float(fields[7]),
+        "change_pct": round(change_pct, 2) if change_pct is not None else None,
+        "volume": _safe_float(fields[12]),
+        "amount": _safe_float(fields[11]),
+        "pe": _safe_float(fields[13]),
+        "pb": _safe_float(fields[14]),
+        "timestamp": f"{fields[17]} {fields[18]}".strip(),
+        "source": "Sina secondary HK stock quote",
+    }
+
+
 def _parse_sina_us_index(code: str, payload: str) -> Optional[Dict[str, object]]:
     raw = _extract_sina_raw(code, payload)
     if not raw:
@@ -118,6 +147,31 @@ def _parse_sina_us_index(code: str, payload: str) -> Optional[Dict[str, object]]
         "change_pct": round(change_pct, 2) if change_pct is not None else None,
         "timestamp": fields[3],
         "source": "Sina secondary US index",
+    }
+
+
+def _parse_sina_fx(code: str, payload: str) -> Optional[Dict[str, object]]:
+    raw = _extract_sina_raw(code, payload)
+    if not raw:
+        return None
+    fields = raw.split(",")
+    if len(fields) < 10:
+        return None
+    current = _safe_float(fields[1])
+    high_low_candidates = [_safe_float(fields[5]), _safe_float(fields[6])]
+    high_low_values = [value for value in high_low_candidates if value is not None]
+    return {
+        "symbol": code.replace("fx_s", "").upper(),
+        "name": fields[9] or code,
+        "current": current,
+        "open": _safe_float(fields[2]),
+        "low": min(high_low_values) if high_low_values else None,
+        "high": max(high_low_values) if high_low_values else None,
+        "previous_close": _safe_float(fields[7]),
+        "change": _safe_float(fields[11]) if len(fields) > 11 else None,
+        "change_pct": _safe_float(fields[12]) if len(fields) > 12 else None,
+        "timestamp": f"{fields[17]} {fields[0]}".strip() if len(fields) > 17 else fields[0],
+        "source": "Sina secondary FX quote",
     }
 
 
@@ -553,6 +607,69 @@ async def fetch_yahoo_copper_future() -> Optional[Dict[str, object]]:
         "change_pct": round(change_pct, 2) if change_pct is not None else None,
         "timestamp": timestamp_text,
         "source": "Yahoo Finance secondary futures",
+    }
+
+
+async def fetch_sina_hk_stock_quote(hk_code: str) -> Dict[str, object]:
+    code = hk_code.strip().lower().replace(".hk", "").replace("hk", "")
+    code = f"rt_hk{code.zfill(5)}"
+    url = "https://hq.sinajs.cn/list=" + code
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn"}
+    async with httpx.AsyncClient(timeout=10, headers=headers, trust_env=False) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+    text = response.content.decode("gbk", errors="replace")
+    parsed = _parse_sina_hk_stock(code, text)
+    if not parsed:
+        raise MarketDataError(f"Sina HK stock quote empty: {hk_code}")
+    return parsed
+
+
+async def fetch_sina_fx_quote(code: str = "fx_shkdcny") -> Dict[str, object]:
+    normalized = code.strip().lower()
+    url = "https://hq.sinajs.cn/list=" + normalized
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn"}
+    async with httpx.AsyncClient(timeout=10, headers=headers, trust_env=False) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+    text = response.content.decode("gbk", errors="replace")
+    parsed = _parse_sina_fx(normalized, text)
+    if not parsed:
+        raise MarketDataError(f"Sina FX quote empty: {code}")
+    return parsed
+
+
+async def fetch_chinamoney_gov_yield() -> Dict[str, object]:
+    """Fetch latest 1Y/10Y China government bond yield from ChinaMoney.
+
+    ChinaMoney/CFETS exposes the same JSON endpoint used by its public history
+    page. We label it as an official public page-derived provider and keep exact
+    source/timestamps downstream.
+    """
+
+    url = "https://www.chinamoney.com.cn/ags/ms/cm-u-bk-currency/SddsIntrRateGovYldHis"
+    params = {"lang": "CN", "pageNum": "1", "pageSize": "5"}
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.chinamoney.com.cn/chinese/sddsintigy/"}
+    async with httpx.AsyncClient(timeout=12, headers=headers, trust_env=False) as client:
+        response = await client.post(url, params=params)
+        response.raise_for_status()
+    payload = response.json()
+    records = payload.get("records") or []
+    if not records:
+        raise MarketDataError("ChinaMoney government yield records empty")
+    latest = records[0]
+    one_year = _safe_float(latest.get("oneRate"))
+    ten_year = _safe_float(latest.get("tenRate"))
+    if ten_year is None:
+        raise MarketDataError("ChinaMoney 10Y government yield missing")
+    return {
+        "date": latest.get("dateString"),
+        "one_year_yield": one_year,
+        "ten_year_yield": ten_year,
+        "timestamp": (payload.get("head") or {}).get("tstext") or latest.get("dateString"),
+        "source": "ChinaMoney official public government bond yield history",
+        "source_url": "https://www.chinamoney.com.cn/chinese/sddsintigy/",
+        "raw": latest,
     }
 
 

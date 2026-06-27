@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List
 
 from app.services.data_quality import missing_input, source_warning
-from app.services.market_data import fetch_sina_quotes
+from app.services.market_data import fetch_chinamoney_gov_yield, fetch_sina_fx_quote, fetch_sina_hk_stock_quote, fetch_sina_quotes
 from app.services.symbols import normalize_symbol
 
 
@@ -306,31 +306,124 @@ async def _build_insurance_provider(industry: str, symbol: str, market_weather: 
             )
         )
 
-    rows.extend(
-        [
-            _row(
-                metric="中国10年国债收益率 provider",
-                status="Missing",
-                latest_reading="不可靠可得",
-                as_of="",
-                source="官方/可靠债券收益率 provider",
-                relevance="长期利率影响保险负债折现、再投资压力、EV/估值和资产端收益预期。",
-                next_evidence="接入中债/上清所/可靠行情 provider 的10年国债收益率和收益率曲线。",
-                provider="industry provider v1",
-            ),
-            _row(
-                metric="A/H 溢价与 H 股价格 provider",
-                status="Missing",
-                latest_reading="不可靠可得",
-                as_of="",
-                source="A/H 同步行情与 FX provider",
-                relevance="A/H 溢价帮助识别两地资金和估值差异，缺失时不判断溢价变化。",
-                next_evidence="接入新华保险 H 股、A 股同时间戳行情和 HKD/CNY 汇率。",
-                provider="industry provider v1",
-            ),
-        ]
-    )
+    rows.append(await _insurance_rate_row())
+    rows.append(await _insurance_ah_premium_row(symbol))
     return _finalize(industry, symbol, rows, missing, warnings)
+
+
+async def _insurance_rate_row() -> ProviderRow:
+    try:
+        data = await fetch_chinamoney_gov_yield()
+        ten_year = data.get("ten_year_yield")
+        one_year = data.get("one_year_yield")
+        return _row(
+            metric="中国10年国债收益率 provider",
+            status="Available",
+            latest_reading=f"10年期国债收益率 {_fmt_pct(ten_year)}；1年期 {_fmt_pct(one_year)}；曲线期限利差约 {_fmt_number((ten_year - one_year) if isinstance(ten_year, (int, float)) and isinstance(one_year, (int, float)) else None)} 个百分点",
+            as_of=str(data.get("date") or data.get("timestamp") or ""),
+            source=str(data.get("source") or "ChinaMoney official public government bond yield history"),
+            source_url=str(data.get("source_url") or ""),
+            relevance="长期利率影响保险负债折现、再投资压力、EV/估值和资产端收益预期。",
+            next_evidence="继续跟踪10年国债收益率的日/周变化，并与保险股估值、投资收益率、OCI 和偿付能力交叉验证。",
+            provider="ChinaMoney official public government bond yield history",
+            raw=data,
+        )
+    except Exception as exc:
+        return _row(
+            metric="中国10年国债收益率 provider",
+            status="Missing",
+            latest_reading="不可靠可得",
+            as_of="",
+            source="ChinaMoney official public government bond yield history",
+            relevance=f"长期利率影响保险负债折现、再投资压力、EV/估值和资产端收益预期；本次读取失败：{exc}",
+            next_evidence="重试中国货币网政府债券利率历史数据，或配置中债/上清所/可靠行情 provider。",
+            provider="industry provider v1.1",
+            source_url="https://www.chinamoney.com.cn/chinese/sddsintigy/",
+        )
+
+
+def _hk_peer_code(symbol: str) -> str:
+    return {
+        "601336.SH": "01336",
+        "601628.SH": "02628",
+        "601318.SH": "02318",
+        "601601.SH": "02601",
+        "601319.SH": "01339",
+    }.get(symbol, "")
+
+
+async def _insurance_ah_premium_row(symbol: str) -> ProviderRow:
+    hk_code = _hk_peer_code(symbol)
+    if not hk_code:
+        return _row(
+            metric="A/H 溢价与 H 股价格 provider",
+            status="Missing",
+            latest_reading="不可靠可得",
+            as_of="",
+            source="A/H 同步行情与 FX provider",
+            relevance="未配置该股票 H 股映射，无法计算 A/H 溢价。",
+            next_evidence="补充该 A 股对应 H 股代码映射，并接入 HKD/CNY 汇率。",
+            provider="industry provider v1.1",
+        )
+    try:
+        normalized = normalize_symbol(symbol)
+        a_quote_map = await fetch_sina_quotes([normalized])
+        a_quote = a_quote_map.get(normalized.symbol) or {}
+        hk_quote = await fetch_sina_hk_stock_quote(hk_code)
+        fx_quote = await fetch_sina_fx_quote("fx_shkdcny")
+        a_price = _float_or_none(a_quote.get("current"))
+        h_price = _float_or_none(hk_quote.get("current"))
+        hkd_cny = _float_or_none(fx_quote.get("current"))
+        if a_price is None or h_price is None or hkd_cny is None or h_price <= 0 or hkd_cny <= 0:
+            raise ValueError("A/H price or HKD/CNY FX missing")
+        h_cny = h_price * hkd_cny
+        premium_pct = (a_price / h_cny - 1) * 100 if h_cny else None
+        a_time = str(a_quote.get("timestamp") or "")
+        h_time = str(hk_quote.get("timestamp") or "")
+        fx_time = str(fx_quote.get("timestamp") or "")
+        same_day = _date_part(a_time) == _date_part(h_time) == _date_part(fx_time)
+        status = "Available" if same_day else "Partial"
+        return _row(
+            metric="A/H 溢价与 H 股价格 provider",
+            status=status,
+            latest_reading=(
+                f"A股 ¥{a_price:.2f} @ {a_time}；H股 HK${h_price:.2f} @ {h_time}；"
+                f"HKD/CNY {hkd_cny:.4f} @ {fx_time}；H股折人民币约 ¥{h_cny:.2f}；"
+                f"A/H 溢价约 {_fmt_pct(premium_pct)}"
+                + ("。" if same_day else "；时间戳非完全同日/同刻，作为近似比较。")
+            ),
+            as_of=" / ".join(item for item in [a_time, h_time, fx_time] if item),
+            source="Sina secondary A/H stock quote + Sina secondary FX quote",
+            relevance="A/H 溢价帮助识别两地资金和估值差异；保险股需结合利率、权益市场和公司 EV/NBV 变化验证。",
+            next_evidence="使用同一完成交易日的 A/H 收盘价与 HKD/CNY 汇率复核溢价变化，并对比历史区间。",
+            provider="Sina secondary A/H stock quote + FX",
+            raw={"a_quote": a_quote, "hk_quote": hk_quote, "fx_quote": fx_quote, "premium_pct": premium_pct},
+        )
+    except Exception as exc:
+        return _row(
+            metric="A/H 溢价与 H 股价格 provider",
+            status="Missing",
+            latest_reading="不可靠可得",
+            as_of="",
+            source="A/H 同步行情与 FX provider",
+            relevance=f"A/H 溢价帮助识别两地资金和估值差异；本次读取失败：{exc}",
+            next_evidence="重试 Sina A/H 行情和 HKD/CNY 汇率，或配置正式港股/汇率 provider。",
+            provider="industry provider v1.1",
+        )
+
+
+def _float_or_none(value: object) -> float | None:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _date_part(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    return value.split(" ", 1)[0].replace("/", "-")
 
 
 def merge_provider_rows(mapped_rows: List[ProviderRow], provider_rows: List[ProviderRow]) -> List[ProviderRow]:

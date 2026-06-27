@@ -84,9 +84,47 @@ def test_merge_provider_rows_keeps_filing_partial_over_provider_missing():
 @pytest.mark.anyio
 async def test_insurance_provider_uses_full_sector_list_when_not_top_ranked(monkeypatch):
     async def fake_fetch_sina_quotes(symbols):
-        return {}
+        return {
+            "601336.SH": {
+                "name": "新华保险",
+                "current": 59.6,
+                "timestamp": "2026-06-26 15:00:03",
+                "source": "Sina secondary quote",
+            }
+        }
+
+    async def fake_fetch_chinamoney_gov_yield():
+        return {
+            "date": "2026-06-26",
+            "one_year_yield": 1.1089,
+            "ten_year_yield": 1.7598,
+            "timestamp": "2026-06-27 18:25:38",
+            "source": "ChinaMoney official public government bond yield history",
+            "source_url": "https://www.chinamoney.com.cn/chinese/sddsintigy/",
+        }
+
+    async def fake_fetch_sina_hk_stock_quote(hk_code):
+        return {
+            "symbol": hk_code,
+            "name": "新华保险",
+            "current": 46.38,
+            "timestamp": "2026/06/26 16:08:14",
+            "source": "Sina secondary HK stock quote",
+        }
+
+    async def fake_fetch_sina_fx_quote(code):
+        return {
+            "symbol": "HKDCNY",
+            "name": "港元兑人民币",
+            "current": 0.867,
+            "timestamp": "2026-06-27 04:59:53",
+            "source": "Sina secondary FX quote",
+        }
 
     monkeypatch.setattr("app.services.industry_providers.fetch_sina_quotes", fake_fetch_sina_quotes)
+    monkeypatch.setattr("app.services.industry_providers.fetch_chinamoney_gov_yield", fake_fetch_chinamoney_gov_yield)
+    monkeypatch.setattr("app.services.industry_providers.fetch_sina_hk_stock_quote", fake_fetch_sina_hk_stock_quote)
+    monkeypatch.setattr("app.services.industry_providers.fetch_sina_fx_quote", fake_fetch_sina_fx_quote)
     market_weather = {
         "sector_weather": {
             "timestamp": "2026-06-26T15:30:00+08:00",
@@ -101,5 +139,10 @@ async def test_insurance_provider_uses_full_sector_list_when_not_top_ranked(monk
     }
 
     result = await build_industry_provider_context("保险", "601336.SH", market_weather)
+    rows = {row["metric"]: row for row in result["rows"]}
 
-    assert any(row["metric"] == "保险板块温度 provider" for row in result["rows"])
+    assert rows["保险板块温度 provider"]["status"] == "Available"
+    assert rows["中国10年国债收益率 provider"]["status"] == "Available"
+    assert "10年期国债收益率 1.76%" in rows["中国10年国债收益率 provider"]["latest_reading"]
+    assert rows["A/H 溢价与 H 股价格 provider"]["status"] == "Partial"
+    assert "A/H 溢价约" in rows["A/H 溢价与 H 股价格 provider"]["latest_reading"]
