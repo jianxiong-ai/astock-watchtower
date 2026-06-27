@@ -81,6 +81,10 @@ def _safe_list(value: object) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _clean_sentence(value: object) -> str:
+    return str(value or "").strip().rstrip("。；; ")
+
+
 def build_trigger_summary(
     analysis: AnalyzeResponse,
     position: Optional[PositionOut],
@@ -151,6 +155,122 @@ def _trigger_rows(
     if not rows:
         rows.append("- watch：本次未触发强阈值；仅保留完成日监控快照和下一证据。")
     return rows
+
+
+def _market_breadth_summary(analysis: AnalyzeResponse) -> str:
+    weather = analysis.market_weather or {}
+    breadth = weather.get("breadth") if isinstance(weather.get("breadth"), dict) else {}
+    sector_weather = weather.get("sector_weather") if isinstance(weather.get("sector_weather"), dict) else {}
+    parts = [f"市场 {weather.get('classification') or 'Unknown'}"]
+    if breadth:
+        parts.append(
+            f"A股上涨/下跌 {breadth.get('up', '不可靠可得')}/{breadth.get('down', '不可靠可得')}，"
+            f"上涨占比 {_fmt_pct(breadth.get('rising_ratio'))}"
+        )
+    if sector_weather:
+        parts.append(
+            f"行业上涨/下跌 {sector_weather.get('up', '不可靠可得')}/{sector_weather.get('down', '不可靠可得')}"
+        )
+    return "；".join(parts)
+
+
+def _top_three_items(
+    *,
+    analysis: AnalyzeResponse,
+    position: Optional[PositionOut],
+    trigger_summary: str,
+    new_announcements: Optional[list[Announcement]],
+    announcement_warning: str,
+    portfolio_market_value: Optional[float],
+) -> list[str]:
+    snapshot = analysis.snapshot or {}
+    technicals = analysis.universal_indicators.get("technicals") or {}
+    change_pct = _to_float(snapshot.get("change_pct")) or 0.0
+    signals = [str(item) for item in _safe_list(technicals.get("signals")) if item]
+    advice = build_position_action_advice(analysis, position, portfolio_market_value=portfolio_market_value)
+    items: list[str] = []
+
+    if trigger_summary and trigger_summary != "无触发":
+        items.append(f"触发：{trigger_summary}")
+    if abs(change_pct) >= 4:
+        items.append(
+            f"价格：{analysis.name} 完成日涨跌幅 {_fmt_pct(change_pct)}，价格 {_fmt_money(snapshot.get('price'))}，"
+            f"时间 {snapshot.get('timestamp') or '不可靠可得'}"
+        )
+    if signals:
+        items.append(f"技术：{'；'.join(signals[:2])}")
+    if new_announcements:
+        important = [item for item in new_announcements if item.importance in {"high", "medium"}]
+        first = (important or new_announcements)[0]
+        items.append(f"公告：新增 {len(new_announcements)} 条，重点看 {first.importance.upper()}｜{first.title}")
+    if str((analysis.market_weather or {}).get("classification") or "") == "Risk-off":
+        items.append(f"市场：{_market_breadth_summary(analysis)}，操作默认偏向控制集中度和保留现金")
+    if advice.get("posture"):
+        items.append(
+            f"持仓纪律：主姿态 {advice.get('posture')}；建议手数 {advice.get('lot_quantity_range') or '不适用'}；"
+            f"下一决策点 {advice.get('next_decision_point')}"
+        )
+    if announcement_warning:
+        items.append(f"数据：公告源警告，需复核官方公告同步；{announcement_warning}")
+    if analysis.missing_inputs or analysis.stale_sources:
+        items.append(f"数据边界：Missing {len(analysis.missing_inputs)} 项，Stale {len(analysis.stale_sources)} 项，只影响缺口相关结论")
+
+    fallback_items = [
+        f"市场：{_market_breadth_summary(analysis)}",
+        f"个股：完成日价格 {_fmt_money(snapshot.get('price'))}，涨跌幅 {_fmt_pct(snapshot.get('change_pct'))}",
+        "证据：继续核对官方公告、行业骨架和下一完成交易日技术状态",
+    ]
+    for item in fallback_items:
+        if item not in items:
+            items.append(item)
+    return items[:3]
+
+
+def _morning_brief_lines(
+    *,
+    analysis: AnalyzeResponse,
+    position: Optional[PositionOut],
+    trigger_summary: str,
+    new_announcements: Optional[list[Announcement]],
+    announcement_warning: str,
+    portfolio_market_value: Optional[float],
+) -> list[str]:
+    advice = build_position_action_advice(analysis, position, portfolio_market_value=portfolio_market_value)
+    snapshot = analysis.snapshot or {}
+    posture = advice.get("posture") or "等待确认"
+    severity = advice.get("severity") or "watch"
+    lines = [
+        "晨会摘要",
+        (
+            f"结论：{analysis.name}（{analysis.symbol}）｜{analysis.decision}｜{posture}（{severity}）｜"
+            f"{_data_mode_label(analysis.data_mode)} {_fmt_money(snapshot.get('price'))}，"
+            f"涨跌幅 {_fmt_pct(snapshot.get('change_pct'))}。"
+        ),
+        f"市场温度：{_market_breadth_summary(analysis)}。",
+        "今日只看 3 件事：",
+    ]
+    for index, item in enumerate(
+        _top_three_items(
+            analysis=analysis,
+            position=position,
+            trigger_summary=trigger_summary,
+            new_announcements=new_announcements,
+            announcement_warning=announcement_warning,
+            portfolio_market_value=portfolio_market_value,
+        ),
+        start=1,
+    ):
+        lines.append(f"{index}. {item}")
+    lines.extend(
+        [
+            (
+                f"操作纪律：{posture}；触发条件：{_clean_sentence(advice.get('trigger_condition'))}；"
+                f"失效条件：{_clean_sentence(advice.get('invalidation_condition'))}。"
+            ),
+            f"数据边界：Missing {len(analysis.missing_inputs)} 项，Stale {len(analysis.stale_sources)} 项；缺口不补值、不替代估算。",
+        ]
+    )
+    return lines
 
 
 def _market_weather_lines(analysis: AnalyzeResponse) -> list[str]:
@@ -618,10 +738,21 @@ def _contract_lines(
         f"交易日历：{calendar_source}{'；' + calendar_warning if calendar_warning else ''}",
         f"价格/技术截止：{analysis.snapshot.get('timestamp') or '不可靠可得'}；来源：{analysis.snapshot.get('source') or '不可靠可得'}。",
         "",
-        "交易日与市场温度",
+        *_morning_brief_lines(
+            analysis=analysis,
+            position=position,
+            trigger_summary=trigger_summary,
+            new_announcements=new_announcements,
+            announcement_warning=announcement_warning,
+            portfolio_market_value=portfolio_market_value,
+        ),
+        "",
+        "详细证据层",
+        "",
+        "1. 交易日与市场温度",
         *_market_weather_lines(analysis),
         "",
-        "触发总览",
+        "2. 触发总览",
         *_trigger_rows(
             analysis=analysis,
             trigger_summary=trigger_summary,

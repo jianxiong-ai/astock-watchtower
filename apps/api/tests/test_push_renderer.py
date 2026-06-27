@@ -134,10 +134,14 @@ def test_subscription_message_uses_research_brief_contract():
         portfolio_market_value=200000.0,
     )
 
-    assert "交易日与市场温度" in message
+    assert "晨会摘要" in message
+    assert "今日只看 3 件事" in message
+    assert "操作纪律" in message
+    assert "详细证据层" in message
+    assert "1. 交易日与市场温度" in message
     assert "A股市场宽度" in message
     assert "行业温度" in message
-    assert "触发总览" in message
+    assert "2. 触发总览" in message
     assert "A. 市场快照" in message
     assert "B. 六组核心骨架" in message
     assert "C. 解释与验证链" in message
@@ -159,6 +163,7 @@ def test_feishu_card_uses_same_contract_content():
     )
 
     content = "\n".join(element.get("content", "") for element in card["elements"] if element.get("tag") == "markdown")
-    assert "交易日与市场温度" in content
+    assert "晨会摘要" in content
+    assert "今日只看 3 件事" in content
     assert "B. 六组核心骨架" in content
     assert card["header"]["template"] == "red"
