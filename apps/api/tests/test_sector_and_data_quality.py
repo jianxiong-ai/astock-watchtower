@@ -32,6 +32,7 @@ def test_extended_industry_inference_and_templates():
     assert infer_industry("中信证券", "600030.SH") == "券商"
     assert infer_industry("万科A", "000002.SZ") == "地产"
     assert infer_industry("京东方A", "000725.SZ") == "半导体/电子"
+    assert infer_industry("寒武纪", "688256.SH") == "半导体/电子"
     assert infer_industry("宁德时代", "300750.SZ") == "新能源/电池"
     assert infer_industry("美的集团", "000333.SZ") == "家电/消费制造"
     assert infer_industry("恒瑞医药", "600276.SH") == "医药"
@@ -71,6 +72,18 @@ def test_stock_name_and_eastmoney_suggest_symbol_normalization():
             }
         )
         == "300750.SZ"
+    )
+    assert (
+        _symbol_from_eastmoney_suggest_item(
+            {
+                "Code": "688256",
+                "Name": "寒武纪",
+                "Classify": "23",
+                "QuoteID": "1.688256",
+                "SecurityTypeName": "科创板",
+            }
+        )
+        == "688256.SH"
     )
 
 

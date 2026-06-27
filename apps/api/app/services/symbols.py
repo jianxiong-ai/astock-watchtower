@@ -82,9 +82,6 @@ def _symbol_from_eastmoney_suggest_item(item: Dict[str, object]) -> Optional[str
     final analysis sources separately.
     """
 
-    if str(item.get("Classify") or "") != "AStock":
-        return None
-
     code = str(item.get("Code") or item.get("UnifiedCode") or "").strip()
     quote_id = str(item.get("QuoteID") or "").strip()
     market = quote_id.split(".", 1)[0] if "." in quote_id else str(item.get("MktNum") or "").strip()

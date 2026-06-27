@@ -11,6 +11,7 @@ SYMBOL_INDUSTRY: Dict[str, str] = {
     "000001.SZ": "银行",
     "000002.SZ": "地产",
     "000725.SZ": "半导体/电子",
+    "688256.SH": "半导体/电子",
     "300750.SZ": "新能源/电池",
     "002594.SZ": "新能源/电池",
     "000333.SZ": "家电/消费制造",
@@ -35,7 +36,7 @@ def infer_industry(name: str, symbol: str) -> str:
         return "券商"
     if "地产" in name or "置业" in name or "房地产" in name:
         return "地产"
-    if "半导体" in name or "芯片" in name or "电子" in name or "光电" in name:
+    if "半导体" in name or "芯片" in name or "电子" in name or "光电" in name or "寒武纪" in name:
         return "半导体/电子"
     if "电池" in name or "锂" in name or "光伏" in name or "新能源" in name or "宁德" in name or "比亚迪" in name:
         return "新能源/电池"
