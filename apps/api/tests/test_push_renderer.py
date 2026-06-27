@@ -22,7 +22,29 @@ def _analysis() -> AnalyzeResponse:
                     "timestamp": "2026-06-26 15:00:00",
                 }
             ],
-            "limitations": ["市场宽度和行业资金流尚未接入。"],
+            "breadth": {
+                "up": 1000,
+                "down": 4112,
+                "flat": 20,
+                "limit_up": 12,
+                "limit_down": 35,
+                "rising_ratio": 19.5,
+                "total_amount": 1_790_000_000_000,
+                "timestamp": "2026-06-26T15:30:00+08:00",
+                "source": "Eastmoney secondary A-share quote list",
+            },
+            "sector_weather": {
+                "up": 80,
+                "down": 380,
+                "rising_ratio": 17.4,
+                "timestamp": "2026-06-26T15:30:00+08:00",
+                "source": "Eastmoney secondary sector board list",
+                "top_gainers": [{"name": "有机硅", "change_pct": 4.72, "main_net_inflow": 194_891_264}],
+                "top_losers": [{"name": "保险", "change_pct": -4.11, "main_net_inflow": -800_000_000}],
+                "top_inflows": [{"name": "硅料硅片", "change_pct": 4.28, "main_net_inflow": 1_352_000_000}],
+                "top_outflows": [{"name": "保险", "change_pct": -4.11, "main_net_inflow": -800_000_000}],
+            },
+            "limitations": ["北向/两融尚未稳定接入。"],
         },
         snapshot={
             "price": 45.43,
@@ -113,6 +135,8 @@ def test_subscription_message_uses_research_brief_contract():
     )
 
     assert "交易日与市场温度" in message
+    assert "A股市场宽度" in message
+    assert "行业温度" in message
     assert "触发总览" in message
     assert "A. 市场快照" in message
     assert "B. 六组核心骨架" in message

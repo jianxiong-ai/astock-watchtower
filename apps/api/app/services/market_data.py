@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
+import asyncio
+import math
 from typing import Dict, Iterable, List, Optional
 
 import httpx
@@ -146,6 +148,48 @@ def _parse_eastmoney_scaled(value: object, scale: float = 100.0) -> Optional[flo
     return number / scale
 
 
+def _round_optional(value: Optional[float], digits: int = 2) -> Optional[float]:
+    return round(value, digits) if value is not None else None
+
+
+def _eastmoney_headers() -> Dict[str, str]:
+    return {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+
+
+async def _fetch_eastmoney_clist_rows(params: Dict[str, str], *, max_pages: int = 80) -> List[Dict[str, object]]:
+    url = "https://push2.eastmoney.com/api/qt/clist/get"
+    page_size = int(params.get("pz") or "100")
+    page_size = max(1, min(page_size, 100))
+    base_params = {**params, "pz": str(page_size)}
+
+    async with httpx.AsyncClient(timeout=15, headers=_eastmoney_headers(), trust_env=False) as client:
+        first_response = await client.get(url, params={**base_params, "pn": "1"})
+        first_response.raise_for_status()
+        first_payload = first_response.json()
+        first_data = first_payload.get("data") or {}
+        total = int(_safe_float(first_data.get("total")) or 0)
+        first_rows = [row for row in (first_data.get("diff") or []) if isinstance(row, dict)]
+        if total <= len(first_rows) or total <= page_size:
+            return first_rows
+
+        page_count = min(max_pages, math.ceil(total / page_size))
+
+        async def fetch_page(page: int) -> List[Dict[str, object]]:
+            response = await client.get(url, params={**base_params, "pn": str(page)})
+            response.raise_for_status()
+            payload = response.json()
+            rows = ((payload.get("data") or {}).get("diff") or [])
+            return [row for row in rows if isinstance(row, dict)]
+
+        pages = await asyncio.gather(*(fetch_page(page) for page in range(2, page_count + 1)), return_exceptions=True)
+        rows = list(first_rows)
+        for page_rows in pages:
+            if isinstance(page_rows, Exception):
+                continue
+            rows.extend(page_rows)
+        return rows
+
+
 async def fetch_eastmoney_quote(symbol: NormalizedSymbol) -> Dict[str, object]:
     """Best-effort secondary quote/valuation provider.
 
@@ -173,7 +217,7 @@ async def fetch_eastmoney_quote(symbol: NormalizedSymbol) -> Dict[str, object]:
         ]
     )
     url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={_eastmoney_secid(symbol)}&fields={fields}"
-    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    headers = _eastmoney_headers()
     async with httpx.AsyncClient(timeout=10, headers=headers, trust_env=False) as client:
         response = await client.get(url)
         response.raise_for_status()
@@ -209,7 +253,7 @@ async def fetch_eastmoney_daily_bars(symbol: NormalizedSymbol, limit: int = 160)
         "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
         f"&klt=101&fqt=1&beg=0&end=20500101&lmt={max(1, min(limit, 300))}"
     )
-    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
+    headers = _eastmoney_headers()
     async with httpx.AsyncClient(timeout=12, headers=headers, trust_env=False) as client:
         response = await client.get(url)
         response.raise_for_status()
@@ -335,6 +379,104 @@ async def fetch_secondary_daily_bars(symbol: NormalizedSymbol, limit: int = 160)
     raise MarketDataError("；".join(errors))
 
 
+async def fetch_eastmoney_a_share_breadth() -> Dict[str, object]:
+    """Fetch broad A-share market breadth from Eastmoney's secondary quote list.
+
+    This is not an official exchange breadth feed. It is used as a best-effort
+    market-temperature input and must be labelled as secondary data downstream.
+    """
+
+    params = {
+        "pn": "1",
+        "pz": "100",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": "m:1+t:2,m:1+t:23,m:0+t:6,m:0+t:80",
+        "fields": "f12,f14,f2,f3,f6",
+    }
+    rows = await _fetch_eastmoney_clist_rows(params, max_pages=70)
+    valid_rows = [row for row in rows if isinstance(row, dict) and _safe_float(row.get("f3")) is not None]
+    changes = [float(_safe_float(row.get("f3")) or 0.0) for row in valid_rows]
+    amounts = [_safe_float(row.get("f6")) or 0.0 for row in valid_rows]
+    total = len(valid_rows)
+    up = len([item for item in changes if item > 0])
+    down = len([item for item in changes if item < 0])
+    flat = total - up - down
+    limit_up = len([item for item in changes if item >= 9.8])
+    limit_down = len([item for item in changes if item <= -9.8])
+    rising_ratio = up / total if total else None
+    avg_change = sum(changes) / total if total else None
+    return {
+        "total": total,
+        "up": up,
+        "down": down,
+        "flat": flat,
+        "limit_up": limit_up,
+        "limit_down": limit_down,
+        "rising_ratio": _round_optional(rising_ratio * 100 if rising_ratio is not None else None),
+        "avg_change_pct": _round_optional(avg_change),
+        "total_amount": round(sum(amounts), 2),
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "source": "Eastmoney secondary A-share quote list",
+    }
+
+
+async def fetch_eastmoney_sector_weather() -> Dict[str, object]:
+    """Fetch industry/sector temperature from Eastmoney board list."""
+
+    params = {
+        "pn": "1",
+        "pz": "100",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": "m:90+t:2",
+        "fields": "f12,f14,f3,f6,f62",
+    }
+    rows = await _fetch_eastmoney_clist_rows(params, max_pages=8)
+    sectors: List[Dict[str, object]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        change = _safe_float(row.get("f3"))
+        if change is None:
+            continue
+        sectors.append(
+            {
+                "code": row.get("f12"),
+                "name": row.get("f14"),
+                "change_pct": round(change, 2),
+                "amount": _safe_float(row.get("f6")),
+                "main_net_inflow": _safe_float(row.get("f62")),
+                "source": "Eastmoney secondary sector board list",
+            }
+        )
+    up = len([item for item in sectors if float(item.get("change_pct") or 0.0) > 0])
+    down = len([item for item in sectors if float(item.get("change_pct") or 0.0) < 0])
+    total = len(sectors)
+    sorted_by_change = sorted(sectors, key=lambda item: float(item.get("change_pct") or 0.0), reverse=True)
+    sorted_by_flow = sorted(sectors, key=lambda item: float(item.get("main_net_inflow") or 0.0), reverse=True)
+    return {
+        "total": total,
+        "up": up,
+        "down": down,
+        "rising_ratio": _round_optional(up / total * 100 if total else None),
+        "top_gainers": sorted_by_change[:8],
+        "top_losers": list(reversed(sorted_by_change[-8:])),
+        "top_inflows": sorted_by_flow[:8],
+        "top_outflows": list(reversed(sorted_by_flow[-8:])),
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "source": "Eastmoney secondary sector board list",
+    }
+
+
 async def fetch_sina_quotes(symbols: Iterable[NormalizedSymbol]) -> Dict[str, Dict[str, object]]:
     symbols = list(symbols)
     if not symbols:
@@ -433,10 +575,20 @@ async def fetch_market_weather() -> Dict[str, object]:
         )
     context: Dict[str, List[Dict[str, object]]] = {"hk_indices": [], "us_indices": [], "commodities": []}
     context_warnings: List[str] = []
+    breadth: Dict[str, object] = {}
+    sector_weather: Dict[str, object] = {}
     try:
         context = await fetch_sina_market_context()
     except Exception as exc:
         context_warnings.append(f"Sina 港股/美股/商品上下文读取失败：{exc}")
+    try:
+        breadth = await fetch_eastmoney_a_share_breadth()
+    except Exception as exc:
+        context_warnings.append(f"Eastmoney A股市场宽度读取失败：{exc}")
+    try:
+        sector_weather = await fetch_eastmoney_sector_weather()
+    except Exception as exc:
+        context_warnings.append(f"Eastmoney 行业温度读取失败：{exc}")
     try:
         copper = await fetch_yahoo_copper_future()
         if copper:
@@ -467,6 +619,30 @@ async def fetch_market_weather() -> Dict[str, object]:
     elif copper_changes and sum(copper_changes) / len(copper_changes) <= -1.0:
         risk_score -= 1
 
+    breadth_ratio = _safe_float(breadth.get("rising_ratio"))
+    if breadth_ratio is not None:
+        if breadth_ratio <= 20:
+            risk_score -= 2
+        elif breadth_ratio <= 35:
+            risk_score -= 1
+        elif breadth_ratio >= 75:
+            risk_score += 2
+        elif breadth_ratio >= 60:
+            risk_score += 1
+    limit_up = int(_safe_float(breadth.get("limit_up")) or 0)
+    limit_down = int(_safe_float(breadth.get("limit_down")) or 0)
+    if limit_down >= 50 and limit_down > limit_up:
+        risk_score -= 1
+    elif limit_up >= 80 and limit_up > limit_down * 2:
+        risk_score += 1
+
+    sector_ratio = _safe_float(sector_weather.get("rising_ratio"))
+    if sector_ratio is not None:
+        if sector_ratio <= 30:
+            risk_score -= 1
+        elif sector_ratio >= 65:
+            risk_score += 1
+
     if risk_score <= -2:
         classification = "Risk-off"
     elif risk_score >= 2:
@@ -477,12 +653,14 @@ async def fetch_market_weather() -> Dict[str, object]:
         "classification": classification,
         "as_of": datetime.now().isoformat(timespec="seconds"),
         "indices": items,
+        "breadth": breadth,
+        "sector_weather": sector_weather,
         "hk_indices": context.get("hk_indices", []),
         "us_indices": context.get("us_indices", []),
         "commodities": context.get("commodities", []),
         "risk_score": risk_score,
         "limitations": [
-            "A股市场宽度、行业资金流、北向/两融尚未稳定接入，需作为 Missing Inputs 处理。",
+            "北向/两融尚未稳定接入，需作为 Missing Inputs 处理。",
             *context_warnings,
         ],
     }

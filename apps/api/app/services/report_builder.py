@@ -38,6 +38,45 @@ def _line(label: str, value: object, level: str = "info", source: str = "") -> D
     return {"label": label, "value": value, "level": level, "source": source}
 
 
+def _market_weather_items(market_weather: Dict[str, Any]) -> List[Dict[str, Any]]:
+    items = [_line("市场天气", f"{market_weather.get('classification')} @{market_weather.get('as_of')}")]
+    breadth = market_weather.get("breadth") if isinstance(market_weather.get("breadth"), dict) else {}
+    if breadth:
+        items.extend(
+            [
+                _line(
+                    "A股市场宽度",
+                    (
+                        f"上涨/下跌 {breadth.get('up', '不可靠可得')}/{breadth.get('down', '不可靠可得')}；"
+                        f"上涨占比 {_fmt_pct(breadth.get('rising_ratio'))}"
+                    ),
+                    source=str(breadth.get("source") or ""),
+                ),
+                _line("涨跌停", f"{breadth.get('limit_up', '不可靠可得')} / {breadth.get('limit_down', '不可靠可得')}"),
+                _line("全市场成交额", _fmt_large_money(breadth.get("total_amount"))),
+            ]
+        )
+    sector_weather = market_weather.get("sector_weather") if isinstance(market_weather.get("sector_weather"), dict) else {}
+    if sector_weather:
+        top_gainers = list(sector_weather.get("top_gainers") or [])
+        top_losers = list(sector_weather.get("top_losers") or [])
+        items.extend(
+            [
+                _line(
+                    "行业温度",
+                    (
+                        f"上涨/下跌 {sector_weather.get('up', '不可靠可得')}/{sector_weather.get('down', '不可靠可得')}；"
+                        f"上涨占比 {_fmt_pct(sector_weather.get('rising_ratio'))}"
+                    ),
+                    source=str(sector_weather.get("source") or ""),
+                ),
+                _line("行业涨幅居前", "；".join(f"{item.get('name')} {_fmt_pct(item.get('change_pct'))}" for item in top_gainers[:3]) or "不可靠可得"),
+                _line("行业跌幅居前", "；".join(f"{item.get('name')} {_fmt_pct(item.get('change_pct'))}" for item in top_losers[:3]) or "不可靠可得"),
+            ]
+        )
+    return items
+
+
 def build_report_sections(
     *,
     symbol: str,
@@ -85,7 +124,7 @@ def build_report_sections(
                 _line("前收", _fmt_money(snapshot.get("previous_close"))),
                 _line("最高/最低", f"{_fmt_money(snapshot.get('high'))} / {_fmt_money(snapshot.get('low'))}"),
                 _line("成交额", _fmt_money(snapshot.get("amount"))),
-                _line("市场天气", f"{market_weather.get('classification')} @{market_weather.get('as_of')}"),
+                *_market_weather_items(market_weather),
             ],
         }
     )

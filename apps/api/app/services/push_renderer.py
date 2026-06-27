@@ -166,6 +166,35 @@ def _market_weather_lines(analysis: AnalyzeResponse) -> list[str]:
                 f"- {item.get('name') or item.get('symbol')} {item.get('current') or '不可靠可得'}，"
                 f"{_fmt_pct(item.get('change_pct'))}；{item.get('timestamp') or '不可靠可得'}"
             )
+    breadth = weather.get("breadth") if isinstance(weather.get("breadth"), dict) else {}
+    if breadth:
+        lines.append(
+            "A股市场宽度："
+            f"上涨/下跌 {breadth.get('up', '不可靠可得')}/{breadth.get('down', '不可靠可得')}，"
+            f"平盘 {breadth.get('flat', '不可靠可得')}，"
+            f"涨跌停 {breadth.get('limit_up', '不可靠可得')}/{breadth.get('limit_down', '不可靠可得')}，"
+            f"上涨占比 {_fmt_pct(breadth.get('rising_ratio'))}，"
+            f"成交额 {_fmt_large_money(breadth.get('total_amount'))}；{breadth.get('timestamp') or '不可靠可得'}"
+        )
+    sector_weather = weather.get("sector_weather") if isinstance(weather.get("sector_weather"), dict) else {}
+    if sector_weather:
+        lines.append(
+            "行业温度："
+            f"上涨/下跌 {sector_weather.get('up', '不可靠可得')}/{sector_weather.get('down', '不可靠可得')}，"
+            f"上涨占比 {_fmt_pct(sector_weather.get('rising_ratio'))}；{sector_weather.get('timestamp') or '不可靠可得'}"
+        )
+        top_gainers = _safe_list(sector_weather.get("top_gainers"))
+        top_losers = _safe_list(sector_weather.get("top_losers"))
+        top_inflows = _safe_list(sector_weather.get("top_inflows"))
+        top_outflows = _safe_list(sector_weather.get("top_outflows"))
+        if top_gainers:
+            lines.append("行业涨幅居前：" + "；".join(f"{item.get('name')} {_fmt_pct(item.get('change_pct'))}" for item in top_gainers[:3]))
+        if top_losers:
+            lines.append("行业跌幅居前：" + "；".join(f"{item.get('name')} {_fmt_pct(item.get('change_pct'))}" for item in top_losers[:3]))
+        if top_inflows:
+            lines.append("行业资金流入居前：" + "；".join(f"{item.get('name')} {_fmt_large_money(item.get('main_net_inflow'))}" for item in top_inflows[:3]))
+        if top_outflows:
+            lines.append("行业资金流出居前：" + "；".join(f"{item.get('name')} {_fmt_large_money(item.get('main_net_inflow'))}" for item in top_outflows[:3]))
     hk_indices = _safe_list(weather.get("hk_indices"))
     if hk_indices:
         lines.append("港股/中资风险偏好：")
