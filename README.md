@@ -24,7 +24,7 @@
   - 手动发送当前分析推送到飞书
   - 任意 A 股手动分析接口
   - 市场天气 v2：A 股市场宽度、涨跌停、全市场成交额、行业涨跌/资金流、港股/美股/商品上下文
-  - 行业 provider v1.1：把外部行业读数以统一结构注入行业骨架；首批支持有色/矿业的铜价与铜链板块温度、保险的同业表现、保险板块温度、中国 10 年国债收益率和 A/H 溢价近似计算，并明确保留 TC/RC、库存升贴水等 Missing Inputs
+  - 行业 provider v1.2：把外部行业读数以统一结构注入行业骨架；首批支持有色/矿业的铜价、铜链板块温度和自定义 CSV 铜链数据，保险的同业表现、保险板块温度、中国 10 年国债收益率和 A/H 溢价近似计算；不可得字段仍明确写入 Missing Inputs
   - 系统健康检查：数据库、调度器、交易日历、关键配置和数据源状态
 - Next.js 前端
   - 单页工作台：订阅 / 分析切换；数据质量和健康检查作为高级入口默认隐藏
@@ -236,8 +236,8 @@ Excel 导入会返回质量反馈：
 - 抽取质量调试：网站提供“抽取质量”页面，可输入股票查看公告同步状态、PDF 抽取状态、表格数量、每份公告抽出的字段、字段来源片段、行业映射覆盖率和质量警告，便于迭代解析规则。
 - 分析和订阅推送会读取已入库结构化事实，并在“官方结构化事实/行业骨架与缺口”中展示最新证据；没有可靠字段时继续明确标记 Stale Sources 或 Missing Inputs。
 - 行业专属指标映射：把通用财报/分红/业绩预告事实映射到白酒、保险、有色/矿业、银行、券商、地产、半导体/电子、新能源/电池、家电/消费制造、医药、公用/能源和通用行业骨架，逐项输出 Available / Partial / Missing、最新读数、证据来源、重要性和下一证据。尚未解析的行业专属字段（如保险 NBV/EV/CSM、有色 TC/RC/单位成本、券商两融/投行储备、地产销售/交付、半导体订单/稼动率、新能源出货/装机/产能利用率、家电渠道库存/终端动销、医药管线/集采、公用能源电价/利用小时）会进入 Missing Inputs，而不是用通用财务字段替代。
-- 行业 provider v1：在财报/公告抽取之外，为行业骨架补充外部读数。当前首批 provider 包括：
-  - 有色/矿业：Sina/Yahoo 商品上下文中的伦铜/COMEX 铜、Eastmoney 行业板块中的有色/能源金属/铜链温度；TC/RC、SHFE/LME/COMEX 库存、现货升贴水和期限结构仍明确 Missing。
+- 行业 provider v1.2：在财报/公告抽取之外，为行业骨架补充外部读数。当前首批 provider 包括：
+  - 有色/矿业：Sina/Yahoo 商品上下文中的伦铜/COMEX 铜、Eastmoney 行业板块中的有色/能源金属/铜链温度；支持通过 `data/industry_providers/copper_chain.csv` 自定义补充 TC/RC、LME/SHFE/COMEX 库存、现货升贴水、期限价差和进口盈亏。没有自定义数据时，这些字段仍明确 Missing。
   - 保险：Sina 二级行情中的中国人寿、中国平安、中国太保、中国人保同业表现，Eastmoney 保险板块温度；ChinaMoney/中国货币网政府债券利率历史数据中的 1 年/10 年国债收益率；Sina A/H 行情和 HKD/CNY 汇率用于近似计算 A/H 溢价。若 A/H/FX 时间戳不完全一致，会标记为 Partial 并写出口径。
   - provider 输出会与官方披露映射合并：当官方披露缺失而 provider 有可用读数时补齐解释层；当官方披露已有更强证据时，不用 provider 的 Missing 覆盖它。
 - 行情估值、技术指标与市场天气：分析和订阅推送展示行情快照、总市值/流通市值、PE、PB、换手率、MA5/10/20/60/120、RSI14、20/60 日高低、近期高点回撤、成交量/20日均量和技术触发信号。市场天气会综合主要 A 股指数、A 股市场宽度、涨跌停、全市场成交额、行业涨跌/资金流、港股/美股和商品上下文。行情主快照使用 Sina 二级源，估值和 K 线优先使用 Eastmoney 二级源，失败时 fallback 到 Tencent 二级源；不可得时明确写入 Missing/Stale。
@@ -268,6 +268,29 @@ Excel 导入会返回质量反馈：
 - 估值/历史 K 线/技术指标：Eastmoney / Tencent 二级接口，尽力而为；失败时不编造
 - 市场天气：Eastmoney A 股列表和行业板块列表用于市场宽度、涨跌停、成交额、行业涨跌和主力净流入；Sina/Yahoo 用于港股、美股和商品上下文；行业 provider v1 会复用这些读数补充行业骨架
 - 公告/财报：上交所/深交所官方公告接口；已支持规则化 PDF 正文/表格抽取和部分财报字段解析，完整会计报表解析仍在后续计划中
+- 自定义行业数据：可选把 CSV 放入 `data/industry_providers/`，Docker 会挂载到 API 容器 `/data/industry_providers`；默认目录可通过 `INDUSTRY_PROVIDER_DATA_DIR` 修改。
+
+### 自定义铜链 CSV
+
+如果你有授权可用的 TC/RC、库存、升贴水等数据，可以复制示例文件：
+
+```bash
+cp data/industry_providers/copper_chain.example.csv data/industry_providers/copper_chain.csv
+```
+
+支持列：
+
+| 列名 | 说明 |
+| --- | --- |
+| `metric` | 指标名，当前支持 `tc_rc`、`tc`、`rc`、`lme_inventory`、`shfe_inventory`、`comex_inventory`、`bonded_inventory`、`shfe_spot_premium`、`spot_premium`、`curve_spread`、`import_profit` |
+| `as_of` | 数据截止日期或时间 |
+| `value` | 数值 |
+| `unit` | 单位，例如 `USD/t`、`t`、`CNY/t` |
+| `source` | 数据来源名称 |
+| `source_url` | 可选来源链接 |
+| `note` | 可选口径说明 |
+
+系统会按同一 `metric` 的最新 `as_of` 取值。示例文件不会被读取，只有命名为 `copper_chain.csv` 的文件才会生效。自定义数据会在报告中标为 `CustomProvider copper_chain.csv`，不会伪装成官方来源。
 
 后续计划把数据源抽象为 provider：
 

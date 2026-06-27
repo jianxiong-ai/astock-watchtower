@@ -32,6 +32,8 @@ services:
       - .env
     ports:
       - "8000:8000"
+    volumes:
+      - ./data/industry_providers:/data/industry_providers
     depends_on:
       db:
         condition: service_healthy

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     periodic_report_pdf_table_max_pages: int = 60
     periodic_report_pdf_table_max_tables: int = 80
     periodic_report_pdf_table_max_chars: int = 60000
+    industry_provider_data_dir: str = "/data/industry_providers"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

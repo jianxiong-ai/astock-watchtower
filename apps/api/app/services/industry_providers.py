@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import csv
+from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from app.config import get_settings
 from app.services.data_quality import missing_input, source_warning
 from app.services.market_data import fetch_chinamoney_gov_yield, fetch_sina_fx_quote, fetch_sina_hk_stock_quote, fetch_sina_quotes
 from app.services.symbols import normalize_symbol
@@ -9,6 +12,7 @@ from app.services.symbols import normalize_symbol
 
 ProviderResult = Dict[str, Any]
 ProviderRow = Dict[str, Any]
+CustomMetric = Dict[str, Any]
 
 
 def _fmt_pct(value: object) -> str:
@@ -27,6 +31,12 @@ def _fmt_number(value: object) -> str:
         return f"{float(value):,.2f}"
     except (TypeError, ValueError):
         return "不可靠可得"
+
+
+def _fmt_value(value: object, unit: object = "") -> str:
+    text = _fmt_number(value)
+    unit_text = str(unit or "").strip()
+    return f"{text}{unit_text}" if unit_text else text
 
 
 def _row(
@@ -201,6 +211,7 @@ async def _build_nonferrous_provider(industry: str, symbol: str, market_weather:
     warnings: List[Dict[str, Any]] = []
 
     rows.extend(_commodity_rows(market_weather))
+    custom_metrics = _load_custom_copper_chain_metrics()
     sector_items = _find_sector_items(market_weather, ["有色", "金属", "铜", "铝", "锌", "锂", "能源金属"])
     if sector_items:
         rows.append(
@@ -229,31 +240,120 @@ async def _build_nonferrous_provider(industry: str, symbol: str, market_weather:
             )
         )
 
-    rows.extend(
-        [
-            _row(
-                metric="TC/RC 外部报价 provider",
-                status="Missing",
-                latest_reading="不可靠可得",
-                as_of="",
-                source="可靠现货/季度/长单 TC/RC provider",
-                relevance="TC/RC 是外购矿冶炼利润核心变量，缺失时不能判断冶炼利润是否继续压缩。",
-                next_evidence="配置 Fastmarkets/Benchmark/公司披露/用户自带 TC-RC 数据源。",
-                provider="industry provider v1",
-            ),
-            _row(
-                metric="SHFE/LME/COMEX 库存/升贴水 provider",
-                status="Missing",
-                latest_reading="不可靠可得",
-                as_of="",
-                source="SHFE/LME/COMEX official or licensed provider",
-                relevance="库存、升贴水和期限结构解释铜价与股价、TC/RC、进口盈亏之间的背离。",
-                next_evidence="接入 SHFE/LME/COMEX 库存、现货升贴水、期限结构和上海/伦敦比价。",
-                provider="industry provider v1",
-            ),
-        ]
-    )
+    rows.append(_custom_tc_rc_row(custom_metrics))
+    rows.append(_custom_physical_copper_row(custom_metrics))
     return _finalize(industry, symbol, rows, missing, warnings)
+
+
+def _load_custom_copper_chain_metrics() -> Dict[str, CustomMetric]:
+    path = Path(get_settings().industry_provider_data_dir) / "copper_chain.csv"
+    if not path.exists():
+        return {}
+    rows: Dict[str, CustomMetric] = {}
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for raw in reader:
+                metric = str(raw.get("metric") or "").strip()
+                if not metric:
+                    continue
+                value = _float_or_none(raw.get("value"))
+                if value is None:
+                    continue
+                item: CustomMetric = {
+                    "metric": metric,
+                    "as_of": str(raw.get("as_of") or "").strip(),
+                    "value": value,
+                    "unit": str(raw.get("unit") or "").strip(),
+                    "source": str(raw.get("source") or "User supplied copper_chain.csv").strip(),
+                    "source_url": str(raw.get("source_url") or "").strip(),
+                    "note": str(raw.get("note") or "").strip(),
+                    "file": str(path),
+                }
+                existing = rows.get(metric)
+                if existing is None or str(item.get("as_of") or "") >= str(existing.get("as_of") or ""):
+                    rows[metric] = item
+    except Exception:
+        return {}
+    return rows
+
+
+def _custom_tc_rc_row(metrics: Dict[str, CustomMetric]) -> ProviderRow:
+    tc = metrics.get("tc_rc") or metrics.get("tc") or metrics.get("tcrc")
+    rc = metrics.get("rc")
+    if tc:
+        parts = [f"TC/RC {_fmt_value(tc.get('value'), tc.get('unit'))}"]
+        if rc:
+            parts.append(f"RC {_fmt_value(rc.get('value'), rc.get('unit'))}")
+        note = str(tc.get("note") or "")
+        if note:
+            parts.append(note)
+        return _row(
+            metric="TC/RC 外部报价 provider",
+            status="Available",
+            latest_reading="；".join(parts),
+            as_of=str(tc.get("as_of") or ""),
+            source=str(tc.get("source") or "User supplied copper_chain.csv"),
+            source_url=str(tc.get("source_url") or ""),
+            relevance="TC/RC 是外购矿冶炼利润核心变量；自定义数据源可用于补齐公开免费源缺口，但仍需核对授权和口径。",
+            next_evidence="继续维护同一口径的 spot/benchmark TC/RC，并与公司采购结构、冶炼毛利和产量验证。",
+            provider="CustomProvider copper_chain.csv",
+            raw={"tc": tc, "rc": rc or {}},
+        )
+    return _row(
+        metric="TC/RC 外部报价 provider",
+        status="Missing",
+        latest_reading="不可靠可得",
+        as_of="",
+        source="可靠现货/季度/长单 TC/RC provider 或 data/industry_providers/copper_chain.csv",
+        relevance="TC/RC 是外购矿冶炼利润核心变量，缺失时不能判断冶炼利润是否继续压缩。",
+        next_evidence="配置 Fastmarkets/Benchmark/公司披露/用户自带 TC-RC 数据源；或在 copper_chain.csv 填写 metric=tc_rc。",
+        provider="industry provider v1.2",
+    )
+
+
+def _custom_physical_copper_row(metrics: Dict[str, CustomMetric]) -> ProviderRow:
+    keys = ["lme_inventory", "shfe_inventory", "comex_inventory", "bonded_inventory", "shfe_spot_premium", "spot_premium", "curve_spread", "import_profit"]
+    available = [metrics[key] for key in keys if key in metrics]
+    if available:
+        label_map = {
+            "lme_inventory": "LME库存",
+            "shfe_inventory": "SHFE库存",
+            "comex_inventory": "COMEX库存",
+            "bonded_inventory": "保税区库存",
+            "shfe_spot_premium": "上海现货升贴水",
+            "spot_premium": "现货升贴水",
+            "curve_spread": "期限价差",
+            "import_profit": "进口盈亏",
+        }
+        parts = [
+            f"{label_map.get(str(item.get('metric')), str(item.get('metric')))} {_fmt_value(item.get('value'), item.get('unit'))}"
+            for item in available
+        ]
+        latest = max(available, key=lambda item: str(item.get("as_of") or ""))
+        sources = sorted({str(item.get("source") or "User supplied copper_chain.csv") for item in available})
+        return _row(
+            metric="SHFE/LME/COMEX 库存/升贴水 provider",
+            status="Available" if len(available) >= 3 else "Partial",
+            latest_reading="；".join(parts),
+            as_of=str(latest.get("as_of") or ""),
+            source="；".join(sources),
+            source_url=str(latest.get("source_url") or ""),
+            relevance="库存、升贴水和期限结构解释铜价与股价、TC/RC、进口盈亏之间的背离；自定义数据需保持时间戳和口径可比。",
+            next_evidence="持续补齐 LME/SHFE/COMEX 库存、现货升贴水、期限结构和进口盈亏，尽量使用同一截止时间。",
+            provider="CustomProvider copper_chain.csv",
+            raw={"metrics": available},
+        )
+    return _row(
+        metric="SHFE/LME/COMEX 库存/升贴水 provider",
+        status="Missing",
+        latest_reading="不可靠可得",
+        as_of="",
+        source="SHFE/LME/COMEX official/licensed provider 或 data/industry_providers/copper_chain.csv",
+        relevance="库存、升贴水和期限结构解释铜价与股价、TC/RC、进口盈亏之间的背离。",
+        next_evidence="在 copper_chain.csv 填写 lme_inventory、shfe_inventory、comex_inventory、shfe_spot_premium 等指标，或接入正式数据源。",
+        provider="industry provider v1.2",
+    )
 
 
 async def _build_insurance_provider(industry: str, symbol: str, market_weather: Dict[str, Any]) -> ProviderResult:

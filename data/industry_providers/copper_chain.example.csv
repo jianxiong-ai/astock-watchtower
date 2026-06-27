@@ -1,0 +1,6 @@
+metric,as_of,value,unit,source,source_url,note
+tc_rc,2026-06-26,-40,USD/t,User supplied TC/RC sample,,spot TC low or representative value
+lme_inventory,2026-06-26,125000,t,User supplied inventory sample,,LME copper inventory
+shfe_inventory,2026-06-26,98000,t,User supplied inventory sample,,SHFE copper inventory
+comex_inventory,2026-06-26,76000,t,User supplied inventory sample,,COMEX copper inventory
+shfe_spot_premium,2026-06-26,-80,CNY/t,User supplied physical premium sample,,Shanghai spot premium/discount

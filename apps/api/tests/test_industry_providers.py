@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 
 from app.services.industry_providers import build_industry_provider_context, merge_provider_rows
 
@@ -35,6 +36,38 @@ async def test_nonferrous_provider_uses_market_weather_copper_context():
     assert "有色/铜链板块温度 provider" in metrics
     assert "TC/RC 外部报价 provider" in metrics
     assert any(item["metric"] == "TC/RC 外部报价 provider" for item in result["missing_inputs"])
+
+
+@pytest.mark.anyio
+async def test_nonferrous_custom_csv_provider_overrides_missing(tmp_path, monkeypatch):
+    data_dir = tmp_path / "industry_providers"
+    data_dir.mkdir()
+    (data_dir / "copper_chain.csv").write_text(
+        "\n".join(
+            [
+                "metric,as_of,value,unit,source,source_url,note",
+                "tc_rc,2026-06-26,-40,USD/t,User TC source,,spot TC representative",
+                "lme_inventory,2026-06-26,125000,t,User inventory source,,",
+                "shfe_inventory,2026-06-26,98000,t,User inventory source,,",
+                "shfe_spot_premium,2026-06-26,-80,CNY/t,User premium source,,",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "app.services.industry_providers.get_settings",
+        lambda: SimpleNamespace(industry_provider_data_dir=str(data_dir)),
+    )
+    market_weather = {"commodities": [], "sector_weather": {"sectors": []}}
+
+    result = await build_industry_provider_context("有色/矿业", "600362.SH", market_weather)
+    rows = {row["metric"]: row for row in result["rows"]}
+
+    assert rows["TC/RC 外部报价 provider"]["status"] == "Available"
+    assert "TC/RC -40.00USD/t" in rows["TC/RC 外部报价 provider"]["latest_reading"]
+    assert rows["SHFE/LME/COMEX 库存/升贴水 provider"]["status"] == "Available"
+    assert "LME库存 125,000.00t" in rows["SHFE/LME/COMEX 库存/升贴水 provider"]["latest_reading"]
+    assert not any(item["metric"] == "TC/RC 外部报价 provider" for item in result["missing_inputs"])
 
 
 def test_merge_provider_rows_replaces_missing_with_provider_partial():

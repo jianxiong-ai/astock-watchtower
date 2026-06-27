@@ -17,3 +17,5 @@ coverage/
 *.db
 uploads/
 apps/api/uploads/
+data/industry_providers/*.csv
+!data/industry_providers/*.example.csv
