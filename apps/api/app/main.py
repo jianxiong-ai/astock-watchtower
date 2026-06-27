@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import init_db
-from app.routers import analysis, announcements, positions, scheduler, subscriptions, system, trades
+from app.routers import analysis, announcements, positions, providers, scheduler, subscriptions, system, trades
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 
@@ -30,6 +30,7 @@ app.include_router(analysis.router)
 app.include_router(announcements.router)
 app.include_router(scheduler.router)
 app.include_router(system.router)
+app.include_router(providers.router)
 
 
 @app.on_event("startup")

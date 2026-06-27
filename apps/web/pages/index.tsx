@@ -47,6 +47,9 @@ export default function Home() {
           <Link href="/health">
             <a>健康检查</a>
           </Link>
+          <Link href="/providers">
+            <a>行业数据</a>
+          </Link>
           <span>高级入口默认隐藏；开关状态仅保存在当前浏览器。</span>
         </section>
       )}

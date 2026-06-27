@@ -580,6 +580,86 @@ pre {
   margin-top: 12px;
 }
 
+.compact-table {
+  margin-top: 16px;
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+}
+
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.provider-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.badge.ok {
+  background: rgba(52, 199, 89, 0.12);
+  color: #1f8f44;
+}
+
+.badge.warning {
+  background: #fff8d6;
+  color: #b25a00;
+}
+
+.muted-badge {
+  background: rgba(110, 110, 115, 0.12);
+  color: var(--muted);
+}
+
+.provider-columns {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(245, 245, 247, 0.7);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.file-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-button.disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
