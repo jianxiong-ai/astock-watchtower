@@ -85,6 +85,12 @@ def _clean_sentence(value: object) -> str:
     return str(value or "").strip().rstrip("。；; ")
 
 
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def build_trigger_summary(
     analysis: AnalyzeResponse,
     position: Optional[PositionOut],
@@ -206,8 +212,9 @@ def _top_three_items(
     if str((analysis.market_weather or {}).get("classification") or "") == "Risk-off":
         items.append(f"市场：{_market_breadth_summary(analysis)}，操作默认偏向控制集中度和保留现金")
     if advice.get("posture"):
+        summary_line = advice.get("summary_line")
         items.append(
-            f"持仓纪律：主姿态 {advice.get('posture')}；建议手数 {advice.get('lot_quantity_range') or '不适用'}；"
+            f"持仓纪律：{summary_line or ('主姿态 ' + str(advice.get('posture')))}；"
             f"下一决策点 {advice.get('next_decision_point')}"
         )
     if announcement_warning:
@@ -264,7 +271,8 @@ def _morning_brief_lines(
     lines.extend(
         [
             (
-                f"操作纪律：{posture}；触发条件：{_clean_sentence(advice.get('trigger_condition'))}；"
+                f"操作纪律：{advice.get('summary_line') or posture}；"
+                f"触发条件：{_clean_sentence(advice.get('trigger_condition'))}；"
                 f"失效条件：{_clean_sentence(advice.get('invalidation_condition'))}。"
             ),
             f"数据边界：Missing {len(analysis.missing_inputs)} 项，Stale {len(analysis.stale_sources)} 项；缺口不补值、不替代估算。",
@@ -664,19 +672,26 @@ def _position_lines(
     portfolio_market_value: Optional[float],
 ) -> list[str]:
     advice = build_position_action_advice(analysis, position, portfolio_market_value=portfolio_market_value)
+    action_steps = _string_list(advice.get("action_steps"))
+    risk_controls = _string_list(advice.get("risk_controls"))
+    decision_checklist = _string_list(advice.get("decision_checklist"))
     if not position:
-        return [
+        lines = [
             "暂无交易记录/持仓基线。",
             f"主姿态：{advice.get('posture')}（{advice.get('severity', 'watch')}）。",
+            f"一句话纪律：{advice.get('summary_line') or advice.get('rationale')}",
             f"说明：{advice.get('rationale')}",
             f"下一决策点：{advice.get('next_decision_point')}",
         ]
+        if action_steps:
+            lines.append("执行步骤：" + "；".join(action_steps[:3]))
+        return lines
 
     position_pct = advice.get("position_pct")
     distance_to_cost = None
     if position.latest_price is not None and position.average_cost:
         distance_to_cost = (position.latest_price - position.average_cost) / position.average_cost * 100
-    return [
+    lines = [
         (
             f"持仓：{position.shares} 股；平均成本 {_fmt_optional_money(position.average_cost)}；"
             f"最新完成日价格 {_fmt_optional_money(position.latest_price)} @{position.latest_price_time or '不可靠可得'}；"
@@ -688,12 +703,26 @@ def _position_lines(
             f"组合权重 {_fmt_pct(position_pct) if position_pct is not None else '不可靠可得'}。"
         ),
         f"主姿态：{advice.get('posture')}（{advice.get('severity')}）；建议手数：{advice.get('lot_quantity_range') or '不适用'}。",
+        f"一句话纪律：{advice.get('summary_line') or '等待下一证据，不执行自动交易。'}",
         f"触发条件：{advice.get('trigger_condition')}",
         f"失效条件：{advice.get('invalidation_condition')}",
-        f"理由：{advice.get('rationale')}",
-        f"主要风险：{advice.get('main_risk')}",
         f"下一决策点：{advice.get('next_decision_point')}",
     ]
+    if action_steps:
+        lines.append("执行步骤：")
+        lines.extend(f"- {item}" for item in action_steps[:4])
+    if risk_controls:
+        lines.append("风控线：")
+        lines.extend(f"- {item}" for item in risk_controls[:4])
+    if decision_checklist:
+        lines.append("下次复核清单：" + "；".join(decision_checklist[:5]))
+    lines.extend(
+        [
+            f"理由：{advice.get('rationale')}",
+            f"主要风险：{advice.get('main_risk')}",
+        ]
+    )
+    return lines
 
 
 def _next_watch_lines(analysis: AnalyzeResponse) -> list[str]:

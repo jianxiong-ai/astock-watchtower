@@ -7,8 +7,14 @@ type AnalyzeResponse = {
   symbol: string;
   name: string;
   industry: string;
+  data_mode: string;
   decision: string;
-  market_weather: { classification: string; indices?: Array<{ name: string; change_pct: number }> };
+  market_weather: {
+    classification: string;
+    as_of?: string;
+    indices?: Array<{ name: string; change_pct: number }>;
+    breadth?: { up?: number; down?: number; rising_ratio?: number; timestamp?: string };
+  };
   snapshot: { price: number; change_pct: number; timestamp: string; source: string; market_cap?: number | null; pe_dynamic?: number | null; pb?: number | null };
   universal_indicators: {
     valuation?: {
@@ -66,6 +72,7 @@ type AnalyzeResponse = {
   };
   events?: Array<{ title: string; type: string; importance: string; published_at: string; url: string; pdf_extract_status?: string; pdf_table_count?: number }>;
   missing_inputs: Array<{ metric: string; impact: string }>;
+  stale_sources?: Array<{ metric: string; impact?: string }>;
   research_posture: { position_basis: string; posture: string; rationale: string };
   position?: {
     symbol: string;
@@ -86,6 +93,12 @@ type AnalyzeResponse = {
     next_decision_point?: string;
     lot_quantity_range?: string;
     position_pct?: number | null;
+    summary_line?: string;
+    urgency?: string;
+    action_steps?: string[];
+    risk_controls?: string[];
+    decision_checklist?: string[];
+    do_not?: string[];
   };
   report_sections?: ReportSection[];
 };
@@ -107,6 +120,10 @@ function fmtNumber(value?: number | string | null, digits = 1) {
 
 function safeArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
+}
+
+function safeTextArray(value: string[] | null | undefined): string[] {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
 function fmtCoverage(value?: Record<string, unknown>) {
@@ -195,6 +212,71 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
 
       {result && (
         <AnalysisRenderBoundary>
+        <section className="analysis-brief">
+          <div>
+            <p className="eyebrow">{result.symbol} · {result.industry} · {result.data_mode}</p>
+            <h2>{result.name}</h2>
+            <p className="brief-conclusion">
+              {result.name}｜{result.decision}｜市场 {result.market_weather.classification || 'Unknown'}｜
+              价格 ¥{result.snapshot.price}，涨跌幅 {result.snapshot.change_pct}%。
+            </p>
+            <p className="muted">
+              截止：{result.snapshot.timestamp || '不可靠可得'} · 来源：{result.snapshot.source || '不可靠可得'}
+              {result.market_weather.as_of ? ` · 市场天气：${result.market_weather.as_of}` : ''}
+            </p>
+          </div>
+          <div className="analysis-brief-metrics">
+            <span>Missing {safeArray(result.missing_inputs).length}</span>
+            <span>Stale {safeArray(result.stale_sources).length}</span>
+            <span>{result.action_advice?.posture ? `操作：${result.action_advice.posture}` : '未接持仓建议'}</span>
+          </div>
+        </section>
+
+        {result.action_advice?.posture ? (
+          <section className="card wide advice-card">
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">POSITION DISCIPLINE</p>
+                <h2>持仓操作纪律</h2>
+              </div>
+              <span className={`badge ${result.action_advice.severity === 'medium' ? 'warning' : 'ok'}`}>
+                {result.action_advice.posture}
+              </span>
+            </div>
+            <p className="brief-conclusion">{result.action_advice.summary_line || result.action_advice.rationale}</p>
+            {result.position && (
+              <p className="muted">
+                持仓：{result.position.shares} 股 · 成本 ¥{result.position.average_cost}
+                {fmtNumber(result.action_advice.position_pct) ? ` · 估算仓位 ${fmtNumber(result.action_advice.position_pct)}%` : ''}
+              </p>
+            )}
+            <div className="advice-grid">
+              <div>
+                <h3>执行步骤</h3>
+                <ol>
+                  {safeTextArray(result.action_advice.action_steps).slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+                </ol>
+                {!safeTextArray(result.action_advice.action_steps).length && <p className="muted">暂无执行步骤。</p>}
+              </div>
+              <div>
+                <h3>风控线</h3>
+                <ul>
+                  {safeTextArray(result.action_advice.risk_controls).slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+                </ul>
+                {!safeTextArray(result.action_advice.risk_controls).length && <p className="muted">暂无风控线。</p>}
+              </div>
+            </div>
+            <p>触发条件：{result.action_advice.trigger_condition || '—'}</p>
+            <p>失效条件：{result.action_advice.invalidation_condition || '—'}</p>
+            <p>下一决策点：{result.action_advice.next_decision_point || '—'}</p>
+            <p className="muted">本模块只在股票已加入订阅池且存在本地交易记录/持仓基线时接入；不会执行交易。</p>
+          </section>
+        ) : (
+          <section className="card wide subtle-card">
+            <p className="muted">该股票未匹配到订阅池持仓基线，因此仅展示研究分析；如需操盘纪律，请先加入订阅并维护交易记录。</p>
+          </section>
+        )}
+
         <section className="grid two">
           <div className="card wide">
             <h2>完整报告</h2>
@@ -275,6 +357,7 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
               )}
               <div className="advice-box">
                 <h3>{result.action_advice.posture} <span className="muted">({result.action_advice.severity || 'watch'})</span></h3>
+                {result.action_advice.summary_line && <p><strong>{result.action_advice.summary_line}</strong></p>}
                 {result.action_advice.lot_quantity_range && <p>建议手数：{result.action_advice.lot_quantity_range}</p>}
                 <p>触发条件：{result.action_advice.trigger_condition || '—'}</p>
                 <p>失效条件：{result.action_advice.invalidation_condition || '—'}</p>

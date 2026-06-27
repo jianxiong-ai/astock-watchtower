@@ -14,19 +14,30 @@ export function renderValue(value: unknown) {
   return String(value);
 }
 
+const COLUMN_LABELS: Record<string, string> = {
+  metric: '指标',
+  status: '状态',
+  latest_reading: '最新读数/状态',
+  as_of: '截止时间/报告期',
+  source: '来源',
+  relevance: '为什么重要',
+  next_evidence: '下一证据',
+};
+
 function renderSectionTable(section: ReportSection) {
   const rows = section.table || [];
   if (!rows.length) return null;
   const preferredColumns = ['metric', 'status', 'latest_reading', 'as_of', 'source', 'relevance', 'next_evidence'];
   const columns = preferredColumns.filter((column) => rows.some((row) => row[column] !== undefined));
-  const fallbackColumns = Object.keys(rows[0] || {}).filter((column) => !columns.includes(column));
+  const hiddenColumns = new Set(['raw', 'source_url', 'company', 'symbol']);
+  const fallbackColumns = Object.keys(rows[0] || {}).filter((column) => !columns.includes(column) && !hiddenColumns.has(column));
   const finalColumns = [...columns, ...fallbackColumns].slice(0, 8);
   return (
     <div className="table-wrap mini">
       <table>
         <thead>
           <tr>
-            {finalColumns.map((column) => <th key={column}>{column}</th>)}
+            {finalColumns.map((column) => <th key={column}>{COLUMN_LABELS[column] || column}</th>)}
           </tr>
         </thead>
         <tbody>

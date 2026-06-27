@@ -64,6 +64,10 @@ def test_action_advice_recommends_staged_trim_for_concentrated_risk_off_loss():
     assert advice["severity"] == "medium"
     assert advice["position_pct"] == 50.0
     assert "100" in advice["lot_quantity_range"]
+    assert advice["summary_line"]
+    assert advice["action_steps"]
+    assert advice["risk_controls"]
+    assert "摊低成本" in "；".join(advice["do_not"])
 
 
 def test_action_advice_waits_when_no_position_baseline():
@@ -72,3 +76,5 @@ def test_action_advice_waits_when_no_position_baseline():
     assert advice["posture"] == "等待确认"
     assert advice["position_pct"] is None
     assert "暂无持仓" in advice["position_summary"]
+    assert advice["urgency"] == "setup_required"
+    assert advice["action_steps"]
