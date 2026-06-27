@@ -343,31 +343,6 @@ export function AnalysisWorkspace({ embedded = false }: { embedded?: boolean }) 
             <p className="muted">{result.research_posture.rationale}</p>
           </div>
 
-          {result.action_advice?.posture && (
-            <div className="card">
-              <h2>持仓操作建议</h2>
-              <p className="muted">
-                仅当该股票已在订阅池中时展示；本建议使用盘中实时分析快照与本地交易记录计算，不执行交易。
-              </p>
-              {result.position && (
-                <p>
-                  持仓：{result.position.shares} 股 · 成本 ¥{result.position.average_cost}
-                  {fmtNumber(result.action_advice.position_pct) ? ` · 估算仓位 ${fmtNumber(result.action_advice.position_pct)}%` : ''}
-                </p>
-              )}
-              <div className="advice-box">
-                <h3>{result.action_advice.posture} <span className="muted">({result.action_advice.severity || 'watch'})</span></h3>
-                {result.action_advice.summary_line && <p><strong>{result.action_advice.summary_line}</strong></p>}
-                {result.action_advice.lot_quantity_range && <p>建议手数：{result.action_advice.lot_quantity_range}</p>}
-                <p>触发条件：{result.action_advice.trigger_condition || '—'}</p>
-                <p>失效条件：{result.action_advice.invalidation_condition || '—'}</p>
-                <p>理由：{result.action_advice.rationale || '—'}</p>
-                <p>主要风险：{result.action_advice.main_risk || '—'}</p>
-                <p>下一决策点：{result.action_advice.next_decision_point || '—'}</p>
-              </div>
-            </div>
-          )}
-
           <div className="card">
             <h2>行业特有指标</h2>
             <ul>
