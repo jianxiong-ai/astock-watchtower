@@ -42,7 +42,7 @@ a {
   max-width: 1180px;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 0 18px 32px;
+  padding: 18px 18px 32px;
 }
 
 .terminal-bar {
@@ -56,12 +56,19 @@ a {
   margin-bottom: 14px;
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 0 0 22px 22px;
+  border-radius: 22px;
   color: var(--text);
   background: rgba(255, 255, 255, 0.74);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.055);
   backdrop-filter: saturate(180%) blur(22px);
   -webkit-backdrop-filter: saturate(180%) blur(22px);
+  transition: top 0.18s ease, border-radius 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.terminal-bar.is-scrolled {
+  top: 0;
+  border-radius: 0 0 22px 22px;
+  background: rgba(255, 255, 255, 0.78);
 }
 
 .terminal-brand {
@@ -678,7 +685,17 @@ pre {
 
 .upload-button {
   min-width: 142px;
-  box-shadow: 0 8px 18px rgba(0, 113, 227, 0.16);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.upload-button:hover,
+.upload-button:focus-within {
+  border-color: rgba(0, 113, 227, 0.28);
+  background: rgba(255, 255, 255, 1);
+  color: var(--primary);
 }
 
 .upload-file-name {
@@ -812,7 +829,7 @@ td select {
     padding: 32px;
   }
   .app-shell {
-    padding: 0 12px 12px;
+    padding: 12px;
   }
   .terminal-bar {
     grid-template-columns: 1fr;

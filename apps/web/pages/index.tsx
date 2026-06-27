@@ -8,9 +8,19 @@ type MainPanel = 'subscriptions' | 'analysis';
 export default function Home() {
   const [activePanel, setActivePanel] = useState<MainPanel>('subscriptions');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
 
   useEffect(() => {
     setShowAdvanced(window.localStorage.getItem('astock-show-advanced') === 'true');
+  }, []);
+
+  useEffect(() => {
+    function handleScroll() {
+      setIsScrolled(window.scrollY > 4);
+    }
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   function toggleAdvanced() {
@@ -21,7 +31,7 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <section className="terminal-bar">
+      <section className={`terminal-bar ${isScrolled ? 'is-scrolled' : ''}`}>
         <div className="terminal-brand">
           <p>ASTOCK-WATCHTOWER</p>
         </div>
