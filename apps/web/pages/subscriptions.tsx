@@ -112,6 +112,7 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
   const [trades, setTrades] = useState<Trade[]>([]);
   const [pushLogs, setPushLogs] = useState<PushLog[]>([]);
   const [importResult, setImportResult] = useState<TradeImportResult | null>(null);
+  const [selectedTradeFileName, setSelectedTradeFileName] = useState('');
   const [symbol, setSymbol] = useState('');
   const [name, setName] = useState('');
   const [webhook, setWebhook] = useState('');
@@ -363,6 +364,7 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
   async function upload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    setSelectedTradeFileName(file.name);
     setImportResult(null);
     try {
       const result = await uploadFile<TradeImportResult>('/api/trades/upload-excel', file);
@@ -588,7 +590,13 @@ export function SubscriptionsWorkspace({ embedded = false }: { embedded?: boolea
       <>
       <section className="card">
         <h2>上传交易记录 Excel</h2>
-        <input type="file" accept=".xlsx" onChange={upload} />
+        <div className="upload-control">
+          <label className="button file-button upload-button">
+            选择 Excel 文件
+            <input type="file" accept=".xlsx" onChange={upload} />
+          </label>
+          <span className="upload-file-name">{selectedTradeFileName || '尚未选择文件'}</span>
+        </div>
         <p className="muted">支持列：symbol / trade_date / side / price / quantity / fee / note，也兼容中文列名。</p>
         {importResult && (
           <div className="import-summary">

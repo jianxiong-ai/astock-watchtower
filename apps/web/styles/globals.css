@@ -42,12 +42,12 @@ a {
   max-width: 1180px;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 18px 18px 32px;
+  padding: 0 18px 32px;
 }
 
 .terminal-bar {
   position: sticky;
-  top: 10px;
+  top: 0;
   z-index: 20;
   display: grid;
   grid-template-columns: 260px minmax(480px, 1fr) auto;
@@ -56,10 +56,12 @@ a {
   margin-bottom: 14px;
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 22px;
+  border-radius: 0 0 22px 22px;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: var(--shadow);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.055);
+  backdrop-filter: saturate(180%) blur(22px);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
 }
 
 .terminal-brand {
@@ -662,6 +664,29 @@ pre {
   opacity: 0.65;
 }
 
+.upload-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(245, 245, 247, 0.72);
+}
+
+.upload-button {
+  min-width: 142px;
+  box-shadow: 0 8px 18px rgba(0, 113, 227, 0.16);
+}
+
+.upload-file-name {
+  color: var(--muted);
+  font-size: 14px;
+  word-break: break-all;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -787,7 +812,7 @@ td select {
     padding: 32px;
   }
   .app-shell {
-    padding: 12px;
+    padding: 0 12px 12px;
   }
   .terminal-bar {
     grid-template-columns: 1fr;
