@@ -145,11 +145,14 @@ def test_subscription_message_uses_research_brief_contract():
     assert "A. 市场快照" in message
     assert "B. 六组核心骨架" in message
     assert "C. 解释与验证链" in message
-    assert "F. 持仓与操作建议" in message
+    assert "F. 持仓操作纪律" in message
     assert "最新已完成交易日" in message
     assert "2026-06-25 15:00:00" in message
     assert "Stable-on-latest-disclosure" in message
     assert "已有官方定期报告" in message
+    morning_block = message.split("详细证据层", 1)[0]
+    assert "触发条件：" not in morning_block
+    assert "失效条件：" not in morning_block
 
 
 def test_feishu_card_uses_same_contract_content():

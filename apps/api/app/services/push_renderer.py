@@ -272,8 +272,7 @@ def _morning_brief_lines(
         [
             (
                 f"操作纪律：{advice.get('summary_line') or posture}；"
-                f"触发条件：{_clean_sentence(advice.get('trigger_condition'))}；"
-                f"失效条件：{_clean_sentence(advice.get('invalidation_condition'))}。"
+                f"下一决策点：{_clean_sentence(advice.get('next_decision_point'))}。"
             ),
             f"数据边界：Missing {len(analysis.missing_inputs)} 项，Stale {len(analysis.stale_sources)} 项；缺口不补值、不替代估算。",
         ]
@@ -803,7 +802,7 @@ def _contract_lines(
         "D. 公告与事件",
         *_events_lines(analysis=analysis, new_announcements=new_announcements, announcement_warning=announcement_warning),
         "",
-        "F. 持仓与操作建议",
+        "F. 持仓操作纪律",
         *_position_lines(analysis=analysis, position=position, portfolio_market_value=portfolio_market_value),
         "",
         "G. 下一观察点",
