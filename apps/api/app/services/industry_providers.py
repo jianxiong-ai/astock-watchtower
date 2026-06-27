@@ -199,10 +199,83 @@ async def _peer_quote_row(symbols: List[str], *, metric: str, relevance: str) ->
 
 async def build_industry_provider_context(industry: str, symbol: str, market_weather: Dict[str, Any]) -> ProviderResult:
     if industry == "有色/矿业":
-        return await _build_nonferrous_provider(industry, symbol, market_weather)
-    if industry == "保险":
-        return await _build_insurance_provider(industry, symbol, market_weather)
-    return _empty_result(industry)
+        result = await _build_nonferrous_provider(industry, symbol, market_weather)
+    elif industry == "保险":
+        result = await _build_insurance_provider(industry, symbol, market_weather)
+    else:
+        result = _empty_result(industry)
+    return _with_custom_generic_rows(result, symbol, industry)
+
+
+def _with_custom_generic_rows(result: ProviderResult, symbol: str, industry: str) -> ProviderResult:
+    custom_rows = _load_custom_generic_rows(symbol, industry)
+    if not custom_rows:
+        return result
+    rows = [*list(result.get("rows") or []), *custom_rows]
+    return _finalize(
+        industry,
+        symbol,
+        rows,
+        [],
+        list(result.get("warnings") or []),
+    )
+
+
+def _load_custom_generic_rows(symbol: str, industry: str) -> List[ProviderRow]:
+    path = Path(get_settings().industry_provider_data_dir) / "custom_metrics.csv"
+    if not path.exists():
+        return []
+    selected: Dict[str, Dict[str, Any]] = {}
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for raw in reader:
+                row_symbol = str(raw.get("symbol") or "").strip()
+                row_industry = str(raw.get("industry") or "").strip()
+                metric = str(raw.get("metric") or "").strip()
+                if not metric:
+                    continue
+                if row_symbol and row_symbol != symbol:
+                    continue
+                if not row_symbol and row_industry and row_industry != industry:
+                    continue
+                if not row_symbol and not row_industry:
+                    continue
+                as_of = str(raw.get("as_of") or "").strip()
+                key = f"{row_symbol or '*'}|{row_industry or '*'}|{metric}"
+                item = {**raw, "metric": metric, "symbol": row_symbol, "industry": row_industry, "as_of": as_of, "file": str(path)}
+                existing = selected.get(key)
+                if existing is None or as_of >= str(existing.get("as_of") or ""):
+                    selected[key] = item
+    except Exception:
+        return []
+    rows: List[ProviderRow] = []
+    for raw in selected.values():
+        rows.append(_custom_generic_row(raw))
+    return rows
+
+
+def _custom_generic_row(raw: Dict[str, Any]) -> ProviderRow:
+    metric = str(raw.get("metric") or "自定义行业指标")
+    status = str(raw.get("status") or "Available").strip() or "Available"
+    value = _float_or_none(raw.get("value"))
+    unit = str(raw.get("unit") or "").strip()
+    latest_reading = str(raw.get("latest_reading") or "").strip()
+    if not latest_reading:
+        latest_reading = f"{metric} {_fmt_value(value, unit)}" if value is not None else str(raw.get("note") or "不可靠可得")
+    source = str(raw.get("source") or "User supplied custom_metrics.csv").strip()
+    return _row(
+        metric=metric,
+        status=status,
+        latest_reading=latest_reading,
+        as_of=str(raw.get("as_of") or ""),
+        source=source,
+        source_url=str(raw.get("source_url") or "").strip(),
+        relevance=str(raw.get("relevance") or "用户自定义行业指标，用于补齐项目暂未内置的数据源。").strip(),
+        next_evidence=str(raw.get("next_evidence") or "继续维护同一口径的自定义数据，并与官方公告、行情和财报结果交叉验证。").strip(),
+        provider="CustomProvider custom_metrics.csv",
+        raw={key: value for key, value in raw.items() if value not in {None, ""}},
+    )
 
 
 async def _build_nonferrous_provider(industry: str, symbol: str, market_weather: Dict[str, Any]) -> ProviderResult:

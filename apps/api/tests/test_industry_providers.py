@@ -92,6 +92,36 @@ def test_merge_provider_rows_replaces_missing_with_provider_partial():
     assert merged[0]["status"] == "Partial"
 
 
+@pytest.mark.anyio
+async def test_generic_custom_metrics_csv_injects_symbol_and_industry_rows(tmp_path, monkeypatch):
+    data_dir = tmp_path / "industry_providers"
+    data_dir.mkdir()
+    (data_dir / "custom_metrics.csv").write_text(
+        "\n".join(
+            [
+                "symbol,industry,metric,status,as_of,value,unit,latest_reading,source,source_url,relevance,next_evidence,note",
+                "600519.SH,白酒,飞天茅台批价,Available,2026-06-26,2350,CNY/瓶,,User channel source,,批价验证渠道景气,继续维护批价,",
+                ",白酒,渠道库存,Partial,2026-06-25,45,天,,User channel source,,库存验证渠道压力,继续维护库存,",
+                "601336.SH,保险,不应匹配,Available,2026-06-26,1,x,,Other source,,no,no,",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "app.services.industry_providers.get_settings",
+        lambda: SimpleNamespace(industry_provider_data_dir=str(data_dir)),
+    )
+
+    result = await build_industry_provider_context("白酒", "600519.SH", {})
+    rows = {row["metric"]: row for row in result["rows"]}
+
+    assert result["status"] == "Available"
+    assert rows["飞天茅台批价"]["latest_reading"] == "飞天茅台批价 2,350.00CNY/瓶"
+    assert rows["飞天茅台批价"]["provider"] == "CustomProvider custom_metrics.csv"
+    assert rows["渠道库存"]["status"] == "Partial"
+    assert "不应匹配" not in rows
+
+
 def test_merge_provider_rows_keeps_filing_partial_over_provider_missing():
     rows = [
         {

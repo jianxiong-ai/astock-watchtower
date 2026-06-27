@@ -1,0 +1,3 @@
+symbol,industry,metric,status,as_of,value,unit,latest_reading,source,source_url,relevance,next_evidence,note
+600519.SH,白酒,飞天茅台批价,Available,2026-06-26,2350,CNY/瓶,,User supplied channel price sample,,批价用于验证白酒渠道景气、库存和利润预期。,持续维护同一口径批价、渠道库存和动销数据。,sample only
+,保险,代理人活动率,Partial,2026-06-30,52,%,,User supplied insurance KPI sample,,代理人活动率用于验证新单和 NBV 质量。,用下一份经营公告或公司披露复核。,sample only
